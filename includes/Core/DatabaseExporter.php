@@ -123,7 +123,9 @@ class DatabaseExporter {
                 } elseif (is_numeric($val) && !is_string($val)) {
                     $values[] = $val;
                 } else {
-                    $values[] = "'" . esc_sql($val) . "'";
+                    $escapedVal = esc_sql($val);
+                    $escapedVal = str_replace(["\r", "\n"], ['\r', '\n'], $escapedVal);
+                    $values[] = "'" . $escapedVal . "'";
                 }
             }
 

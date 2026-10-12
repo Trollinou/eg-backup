@@ -15,7 +15,6 @@ class FileScanner {
      */
     private static $excludedDirectories = [
         'plugins',
-        'themes',
         'upgrade',
         'cache',
         'wpcache',
@@ -154,6 +153,22 @@ class FileScanner {
         if ($lower === 'uploads' || strpos($lower, 'gallery') !== false || strpos($lower, 'galleries') !== false) {
             return true;
         }
+
+        // Recommander les thèmes enfants et le thème actif.
+        if (strpos($lower, 'themes/') === 0) {
+            if (strpos($lower, '-child') !== false) {
+                return true;
+            }
+            if (function_exists('wp_get_theme')) {
+                $activeTheme = wp_get_theme();
+                $activeSlug = strtolower($activeTheme->get_stylesheet());
+                $parentSlug = strtolower($activeTheme->get_template());
+                if ($lower === 'themes/' . $activeSlug || $lower === 'themes/' . $parentSlug) {
+                    return true;
+                }
+            }
+        }
+
         return false;
     }
 

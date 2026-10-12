@@ -183,7 +183,7 @@ class Archiver {
         }
 
         $zip = new \ZipArchive();
-        $mode = file_exists($zipPath) ? \ZipArchive::OPEN_EXISTING : \ZipArchive::CREATE;
+        $mode = file_exists($zipPath) ? 0 : \ZipArchive::CREATE;
 
         if ($zip->open($zipPath, $mode) !== true) {
             return false;
@@ -196,6 +196,76 @@ class Archiver {
         }
 
         return $zip->close();
+    }
+
+    /**
+     * Vérifie si l'utilitaire binaire zip est disponible sur le système.
+     *
+     * @return bool
+     */
+    public static function isCliZipAvailable() {
+        if (!function_exists('exec')) {
+            return false;
+        }
+
+        $disabledFunctions = explode(',', (string) ini_get('disable_functions'));
+        $disabledFunctions = array_map('trim', $disabledFunctions);
+        if (in_array('exec', $disabledFunctions, true)) {
+            return false;
+        }
+
+        $output = [];
+        $returnVar = -1;
+        @exec('which zip', $output, $returnVar);
+
+        return ($returnVar === 0 && !empty($output[0]));
+    }
+
+    /**
+     * Archive ultra-rapidement les fichiers via l'utilitaire système zip (0 compression CPU sur médias).
+     *
+     * @param string $tempDir Répertoire temporaire contenant manifest.json et database.sql.
+     * @param string $zipFilePath Chemin final du fichier ZIP.
+     * @param array $selectedFolders Liste des dossiers relatifs à WP_CONTENT_DIR.
+     * @return bool
+     */
+    public static function archiveWithCliZip($tempDir, $zipFilePath, array $selectedFolders) {
+        $contentDir = wp_normalize_path(WP_CONTENT_DIR);
+        $tempFilesSymlink = $tempDir . 'files';
+
+        if (file_exists($tempFilesSymlink) || is_link($tempFilesSymlink)) {
+            @unlink($tempFilesSymlink);
+        }
+
+        // Création du lien symbolique files -> WP_CONTENT_DIR pour préserver la structure.
+        if (!@symlink($contentDir, $tempFilesSymlink)) {
+            return false;
+        }
+
+        // Ajout des fichiers manifest et base de données à la racine du ZIP.
+        $cmdBase = "cd " . escapeshellarg($tempDir) . " && zip -q -0 " . escapeshellarg($zipFilePath) . " manifest.json database.sql";
+        @exec($cmdBase, $outBase, $retBase);
+
+        // Ajout des dossiers sélectionnés sous le préfixe files/.
+        $targetPaths = [];
+        foreach ($selectedFolders as $relFolder) {
+            $relFolder = ltrim(wp_normalize_path($relFolder), '/');
+            if (file_exists($contentDir . '/' . $relFolder)) {
+                $targetPaths[] = escapeshellarg('files/' . $relFolder);
+            }
+        }
+
+        if (!empty($targetPaths)) {
+            $excludePatterns = '-x "files/*cache/*" "files/*wpcache/*" "files/*et-cache/*" "files/*eg-backup-*"'
+                . ' "files/*node_modules/*" "files/*.git/*" "files/*.svn/*"';
+            $cmdFiles = "cd " . escapeshellarg($tempDir) . " && zip -q -r -0 " . escapeshellarg($zipFilePath)
+                . " " . implode(' ', $targetPaths) . " " . $excludePatterns;
+            @exec($cmdFiles, $outFiles, $retFiles);
+        }
+
+        @unlink($tempFilesSymlink);
+
+        return file_exists($zipFilePath) && filesize($zipFilePath) > 0;
     }
 
     /**

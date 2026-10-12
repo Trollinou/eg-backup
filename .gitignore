@@ -16,3 +16,6 @@ Thumbs.db
 # Fichiers d'environnement
 .env
 .env.local
+
+# Archives et packages
+*.zip

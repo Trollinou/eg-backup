@@ -84,6 +84,12 @@
             });
         });
 
+        // Propagation de la sélection parent/enfants dans l'arborescence
+        $(document).on('change', '.eg-folder-checkbox', function() {
+            var isChecked = $(this).is(':checked');
+            $(this).closest('li.eg-tree-item').find('ul .eg-folder-checkbox').prop('checked', isChecked);
+        });
+
         // Lancement de la sauvegarde
         $('#eg-start-backup-btn').on('click', function() {
             var $btn = $(this);
@@ -195,6 +201,9 @@
             });
         }
 
+        var filesRetryCount = 0;
+        var MAX_FILES_RETRIES = 3;
+
         function processFilesChunkStep(jobId, offset, totalFiles) {
             $.post(ajaxUrl, {
                 action: 'eg_backup_step_files',
@@ -202,6 +211,8 @@
                 job_id: jobId,
                 offset: offset
             }, function(response) {
+                filesRetryCount = 0;
+
                 if (!response.success) {
                     handleError(response.data.message || 'Erreur lors de l\'ajout des fichiers au ZIP.');
                     return;
@@ -211,9 +222,7 @@
                 var fileOverallPercent = Math.min(90, Math.round(52 + (data.progress * 0.38))); // Fichiers de 52% à 90%
                 updateProgress(fileOverallPercent, data.message);
 
-                if (offset === 0 || offset % 300 === 0 || data.finished) {
-                    logMessage('info', data.message);
-                }
+                logMessage('info', data.message);
 
                 if (data.finished) {
                     logMessage('success', 'Tous les fichiers ont été intégrés à l\'archive.');
@@ -227,6 +236,15 @@
                     processFilesChunkStep(jobId, data.offset, totalFiles);
                 }
             }).fail(function(jqXHR, textStatus, errorThrown) {
+                if (filesRetryCount < MAX_FILES_RETRIES) {
+                    filesRetryCount++;
+                    logMessage('warning', 'Incident réseau temporaire (lot ' + offset + '), nouvelle tentative dans 2s (' + filesRetryCount + '/' + MAX_FILES_RETRIES + ')...');
+                    setTimeout(function() {
+                        processFilesChunkStep(jobId, offset, totalFiles);
+                    }, 2000);
+                    return;
+                }
+
                 var detail = jqXHR.status ? ' (HTTP ' + jqXHR.status + ' ' + errorThrown + ')' : '';
                 handleError('Erreur réseau lors du traitement des fichiers' + detail);
             });
@@ -255,7 +273,11 @@
                     'Archive créée : <strong>' + escapeHtml(data.filename) + '</strong> (' + escapeHtml(data.size_human) + ')'
                 );
 
-                var downloadUrl = 'admin.php?page=eg-backup-list&action=eg_backup_download&file=' + encodeURIComponent(data.filename) + '&_wpnonce=' + nonce;
+                var downloadUrl = data.download_url;
+                if (!downloadUrl) {
+                    var dlNonce = (typeof egBackupData !== 'undefined' && egBackupData.downloadNonce) ? egBackupData.downloadNonce : nonce;
+                    downloadUrl = 'admin.php?page=eg-backup-list&action=eg_backup_download&file=' + encodeURIComponent(data.filename) + '&nonce=' + encodeURIComponent(dlNonce);
+                }
                 $('#eg-download-link').attr('href', downloadUrl);
 
                 $('#eg-success-box').fadeIn();

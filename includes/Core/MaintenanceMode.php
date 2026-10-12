@@ -11,12 +11,21 @@ if (!defined('ABSPATH')) {
 class MaintenanceMode {
     /**
      * Active le mode maintenance natif de WordPress.
+     * Autorise les requêtes de restauration EG Backup afin d'éviter les erreurs 503 sur admin-ajax.php.
      *
      * @return bool
      */
     public static function enable() {
         $maintenanceFile = ABSPATH . '.maintenance';
-        $content = "<?php \$upgrading = " . time() . "; ?>";
+        $time = time();
+        $content = "<?php\n"
+            . "// Mode maintenance EG Backup.\n"
+            . "if (isset(\$_REQUEST['action']) && strpos((string) \$_REQUEST['action'], 'eg_restore_') === 0) {\n"
+            . "    \$upgrading = 0;\n"
+            . "} else {\n"
+            . "    \$upgrading = {$time};\n"
+            . "}\n";
+
         return (bool) file_put_contents($maintenanceFile, $content);
     }
 

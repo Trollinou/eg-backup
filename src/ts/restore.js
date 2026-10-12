@@ -9,6 +9,7 @@
         var nonce = egBackupData.nonce;
         var inspectedBackupFilename = '';
         var inspectedManifest = null;
+        var restoreToken = '';
 
         // Auto-inspection si un fichier est passé dans l'URL (?file=...)
         var urlParams = new URLSearchParams(window.location.search);
@@ -79,8 +80,8 @@
         }
 
         function handleInspectionResponse(response) {
-            if (!response.success) {
-                alert(response.data.message || 'Impossible d\'analyser cette sauvegarde.');
+            if (!response || !response.success) {
+                alert(extractErrorMessage(response, 'Impossible d\'analyser cette sauvegarde.'));
                 return;
             }
 
@@ -174,7 +175,7 @@
                     $cell.prev().html('<span class="eg-badge-pill eg-badge-installed">Installé</span>');
                 } else {
                     $btn.prop('disabled', false).text('Réessayer');
-                    alert(response.data.message || 'Erreur lors de l\'installation.');
+                    alert(extractErrorMessage(response, 'Erreur lors de l\'installation.'));
                 }
             }).fail(function() {
                 $btn.prop('disabled', false).text('Réessayer');
@@ -206,12 +207,13 @@
                 nonce: nonce,
                 filename: inspectedBackupFilename
             }, function(response) {
-                if (!response.success) {
-                    handleRestoreError(response.data.message || 'Erreur lors de l\'extraction.');
+                if (!response || !response.success) {
+                    handleRestoreError(extractErrorMessage(response, 'Erreur lors de l\'extraction.'));
                     return;
                 }
 
                 var jobId = response.data.job_id;
+                restoreToken = response.data.restore_token || '';
                 logMessage('success', response.data.message);
                 markRestoreStepDone('rstep-extract');
                 activateRestoreStep('rstep-db');
@@ -225,98 +227,115 @@
         });
 
         function processRestoreDb(jobId, offset, oldUrl, newUrl) {
-            $.post(ajaxUrl, {
-                action: 'eg_restore_step_db',
-                nonce: nonce,
-                job_id: jobId,
-                offset: offset
-            }, function(response) {
-                if (!response.success) {
-                    handleRestoreError(response.data.message || 'Erreur lors de l\'import SQL.');
-                    return;
-                }
+                $.post(ajaxUrl, {
+                    action: 'eg_restore_step_db',
+                    nonce: nonce,
+                    job_id: jobId,
+                    restore_token: restoreToken,
+                    offset: offset
+                }, function(response) {
+                    if (!response || !response.success) {
+                        handleRestoreError(extractErrorMessage(response, 'Erreur lors de l\'import SQL.'), jobId);
+                        return;
+                    }
 
-                var data = response.data;
-                var dbPercent = Math.min(60, Math.round(15 + (data.progress * 0.45)));
-                updateRestoreProgress(dbPercent, data.message);
+                    var data = response.data;
+                    var dbPercent = Math.min(60, Math.round(15 + (data.progress * 0.45)));
+                    updateRestoreProgress(dbPercent, data.message);
 
-                if (data.eof) {
-                    logMessage('success', 'Base de données réimportée intégralement.');
-                    markRestoreStepDone('rstep-db');
-                    activateRestoreStep('rstep-replace');
+                    if (data.eof) {
+                        logMessage('success', 'Base de données réimportée intégralement.');
+                        markRestoreStepDone('rstep-db');
+                        activateRestoreStep('rstep-replace');
 
-                    // Étape 3 : Search & Replace
-                    processRestoreReplace(jobId, oldUrl, newUrl);
-                } else {
-                    processRestoreDb(jobId, data.offset, oldUrl, newUrl);
-                }
-            }).fail(function(jqXHR, textStatus, errorThrown) {
-                var detail = jqXHR.status ? ' (HTTP ' + jqXHR.status + ' ' + errorThrown + ')' : '';
-                handleRestoreError('Erreur réseau lors de l\'import SQL' + detail);
-            });
-        }
+                        // Étape 3 : Search & Replace
+                        processRestoreReplace(jobId, oldUrl, newUrl);
+                    } else {
+                        processRestoreDb(jobId, data.offset, oldUrl, newUrl);
+                    }
+                }).fail(function(jqXHR, textStatus, errorThrown) {
+                    var detail = jqXHR.status ? ' (HTTP ' + jqXHR.status + ' ' + errorThrown + ')' : '';
+                    handleRestoreError('Erreur réseau lors de l\'import SQL' + detail, jobId);
+                });
+            }
 
-        function processRestoreReplace(jobId, oldUrl, newUrl) {
-            updateRestoreProgress(70, 'Mise à jour des adresses et liens (Search & Replace)...');
-            logMessage('info', 'Vérification et adaptation des URLs sérialisées...');
+            function processRestoreReplace(jobId, oldUrl, newUrl) {
+                updateRestoreProgress(70, 'Mise à jour des adresses et liens (Search & Replace)...');
+                logMessage('info', 'Vérification et adaptation des URLs sérialisées...');
 
-            $.post(ajaxUrl, {
-                action: 'eg_restore_step_replace',
-                nonce: nonce,
-                old_url: oldUrl,
-                new_url: newUrl
-            }, function(response) {
-                logMessage('success', response.data.message);
-                markRestoreStepDone('rstep-replace');
-                activateRestoreStep('rstep-files');
+                $.post(ajaxUrl, {
+                    action: 'eg_restore_step_replace',
+                    nonce: nonce,
+                    job_id: jobId,
+                    restore_token: restoreToken,
+                    old_url: oldUrl,
+                    new_url: newUrl
+                }, function(response) {
+                    if (!response || !response.success) {
+                        handleRestoreError(extractErrorMessage(response, 'Erreur lors du remplacement d\'URLs.'), jobId);
+                        return;
+                    }
+                    logMessage('success', response.data.message);
+                    markRestoreStepDone('rstep-replace');
+                    activateRestoreStep('rstep-files');
 
-                // Étape 4 : Restauration des fichiers
-                processRestoreFiles(jobId);
-            }).fail(function(jqXHR, textStatus, errorThrown) {
-                var detail = jqXHR.status ? ' (HTTP ' + jqXHR.status + ' ' + errorThrown + ')' : '';
-                handleRestoreError('Erreur réseau lors du remplacement des URLs' + detail);
-            });
-        }
+                    // Étape 4 : Restauration des fichiers
+                    processRestoreFiles(jobId);
+                }).fail(function(jqXHR, textStatus, errorThrown) {
+                    var detail = jqXHR.status ? ' (HTTP ' + jqXHR.status + ' ' + errorThrown + ')' : '';
+                    handleRestoreError('Erreur réseau lors du remplacement des URLs' + detail, jobId);
+                });
+            }
 
-        function processRestoreFiles(jobId) {
-            updateRestoreProgress(85, 'Restauration des fichiers vers wp-content...');
-            logMessage('info', 'Copie des dossiers de données dans wp-content...');
+            function processRestoreFiles(jobId) {
+                updateRestoreProgress(85, 'Restauration des fichiers vers wp-content...');
+                logMessage('info', 'Copie des dossiers de données dans wp-content...');
 
-            $.post(ajaxUrl, {
-                action: 'eg_restore_step_files',
-                nonce: nonce,
-                job_id: jobId
-            }, function(response) {
-                logMessage('success', response.data.message);
-                markRestoreStepDone('rstep-files');
-                activateRestoreStep('rstep-finalize');
+                $.post(ajaxUrl, {
+                    action: 'eg_restore_step_files',
+                    nonce: nonce,
+                    job_id: jobId,
+                    restore_token: restoreToken
+                }, function(response) {
+                    if (!response || !response.success) {
+                        handleRestoreError(extractErrorMessage(response, 'Erreur lors de la restauration des fichiers.'), jobId);
+                        return;
+                    }
+                    logMessage('success', response.data.message);
+                    markRestoreStepDone('rstep-files');
+                    activateRestoreStep('rstep-finalize');
 
-                // Étape 5 : Finalisation
-                processRestoreFinalize(jobId);
-            }).fail(function(jqXHR, textStatus, errorThrown) {
-                var detail = jqXHR.status ? ' (HTTP ' + jqXHR.status + ' ' + errorThrown + ')' : '';
-                handleRestoreError('Erreur réseau lors de la restauration des fichiers' + detail);
-            });
-        }
+                    // Étape 5 : Finalisation
+                    processRestoreFinalize(jobId);
+                }).fail(function(jqXHR, textStatus, errorThrown) {
+                    var detail = jqXHR.status ? ' (HTTP ' + jqXHR.status + ' ' + errorThrown + ')' : '';
+                    handleRestoreError('Erreur réseau lors de la restauration des fichiers' + detail, jobId);
+                });
+            }
 
-        function processRestoreFinalize(jobId) {
-            updateRestoreProgress(95, 'Désactivation du mode maintenance et nettoyage...');
-            logMessage('info', 'Suppression des fichiers temporaires et retour en ligne...');
+            function processRestoreFinalize(jobId) {
+                updateRestoreProgress(95, 'Désactivation du mode maintenance et nettoyage...');
+                logMessage('info', 'Suppression des fichiers temporaires et retour en ligne...');
 
-            $.post(ajaxUrl, {
-                action: 'eg_restore_finalize',
-                nonce: nonce,
-                job_id: jobId
-            }, function(response) {
-                updateRestoreProgress(100, 'Restauration terminée avec succès !');
-                markRestoreStepDone('rstep-finalize');
-                logMessage('success', response.data.message);
+                $.post(ajaxUrl, {
+                    action: 'eg_restore_finalize',
+                    nonce: nonce,
+                    job_id: jobId,
+                    restore_token: restoreToken
+                }, function(response) {
+                    if (!response || !response.success) {
+                        handleRestoreError(extractErrorMessage(response, 'Erreur lors de la finalisation.'), jobId);
+                        return;
+                    }
+                    updateRestoreProgress(100, 'Restauration terminée avec succès !');
+                    markRestoreStepDone('rstep-finalize');
+                    logMessage('success', response.data.message);
 
-                $('#eg-restore-success-box').fadeIn();
-            }).fail(function() {
-                handleRestoreError('Erreur réseau lors de la finalisation.');
-            });
-        }
+                    $('#eg-restore-success-box').fadeIn();
+                }).fail(function() {
+                    handleRestoreError('Erreur réseau lors de la finalisation.', jobId);
+                });
+            }
 
         // Helpers UI
         function updateRestoreProgress(percent, statusText) {
@@ -343,10 +362,57 @@
             $console.scrollTop($console[0].scrollHeight);
         }
 
-        function handleRestoreError(msg) {
+        function handleRestoreError(msg, jobId) {
             logMessage('error', 'ERREUR CRITIQUE : ' + msg);
             $('#eg-restore-status').text('Échec : ' + msg);
             $('#eg-restore-progress-bar').css('background', '#ef4444');
+
+            if ($('#eg-restore-error-actions').length === 0) {
+                var $errorActions = $('<div id="eg-restore-error-actions" style="margin-top: 15px;">' +
+                    '<button type="button" class="button button-secondary" id="eg-disable-maintenance-btn">' +
+                    '<span class="dashicons dashicons-admin-tools" style="vertical-align: middle;"></span> Désactiver le mode maintenance' +
+                    '</button>' +
+                    '</div>');
+                $('#eg-restore-log-console').after($errorActions);
+
+                $('#eg-disable-maintenance-btn').on('click', function() {
+                    var $btn = $(this);
+                    $btn.prop('disabled', true).text('Désactivation en cours...');
+                    $.post(ajaxUrl, {
+                        action: 'eg_restore_cancel',
+                        nonce: nonce,
+                        job_id: jobId || '',
+                        restore_token: restoreToken || ''
+                    }, function(response) {
+                        var msg = extractErrorMessage(response, 'Mode maintenance désactivé.');
+                        logMessage('info', msg);
+                        $btn.text('Mode maintenance désactivé');
+                    }).fail(function() {
+                        logMessage('error', 'Impossible de désactiver le mode maintenance via AJAX. Supprimez le fichier .maintenance à la racine de votre site.');
+                    });
+                });
+            }
+        }
+
+        function extractErrorMessage(response, defaultMsg) {
+            if (!response) {
+                return defaultMsg;
+            }
+            if (typeof response === 'string') {
+                return response === '-1' ? 'Session expirée ou requête non autorisée (-1).' : response;
+            }
+            if (response.data) {
+                if (typeof response.data === 'string') {
+                    return response.data;
+                }
+                if (response.data.message) {
+                    return response.data.message;
+                }
+            }
+            if (response.message) {
+                return response.message;
+            }
+            return defaultMsg;
         }
 
         function escapeHtml(str) {

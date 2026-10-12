@@ -35,10 +35,25 @@ class AjaxHandler {
             'eg_restore_step_replace',
             'eg_restore_step_files',
             'eg_restore_finalize',
+            'eg_restore_cancel',
         ];
 
         foreach ($actions as $action) {
             add_action("wp_ajax_{$action}", [$this, $action]);
+        }
+
+        // Actions de restauration autorisées sans session WordPress active (sécurisées par restore_token).
+        // Indispensable car l'écrasement de la base de données déconnecte l'administrateur en cours.
+        $noprivRestoreActions = [
+            'eg_restore_step_db',
+            'eg_restore_step_replace',
+            'eg_restore_step_files',
+            'eg_restore_finalize',
+            'eg_restore_cancel',
+        ];
+
+        foreach ($noprivRestoreActions as $action) {
+            add_action("wp_ajax_nopriv_{$action}", [$this, $action]);
         }
     }
 
@@ -199,6 +214,9 @@ class AjaxHandler {
         ]);
         ManifestManager::saveToFile($tempDir . 'manifest.json', $manifest);
 
+        // 2b. Export dédié des réglages du thème actif (Blocksy, etc.) pour garantie absolue.
+        $this->exportThemeSettings($tempDir . 'theme_settings.json');
+
         // 3. Initialiser le fichier ZIP final
         $zipFilename = 'backup_' . gmdate('Y-m-d_H-i-s') . '_' . sanitize_title(get_bloginfo('name')) . '.zip';
         $zipFilePath = Archiver::getStorageDir() . $zipFilename;
@@ -209,6 +227,9 @@ class AjaxHandler {
         }
 
         $zip->addFile($tempDir . 'manifest.json', 'manifest.json');
+        if (file_exists($tempDir . 'theme_settings.json')) {
+            $zip->addFile($tempDir . 'theme_settings.json', 'theme_settings.json');
+        }
         if (file_exists($state['sql_file'])) {
             $zip->addFile($state['sql_file'], 'database.sql');
         }
@@ -231,11 +252,11 @@ class AjaxHandler {
      */
     public function eg_backup_step_files() {
         $this->verifySecurity();
+        @ini_set('memory_limit', '512M');
         @set_time_limit(180);
 
         $jobId = sanitize_text_field($_POST['job_id'] ?? '');
         $offset = (int) ($_POST['offset'] ?? 0);
-        $batchSize = 150; // 150 fichiers par requête
 
         $tempDir = Archiver::getTempDir() . $jobId . '/';
         $stateFile = $tempDir . 'state.json';
@@ -259,34 +280,73 @@ class AjaxHandler {
             ]);
         }
 
-        $batch = array_slice($filesQueue, $offset, $batchSize);
         $zipFilePath = $state['zip_filepath'];
 
         $zip = new \ZipArchive();
-        if ($zip->open($zipFilePath, \ZipArchive::OPEN_EXISTING) !== true) {
+        if ($zip->open($zipFilePath) !== true) {
             wp_send_json_error(['message' => 'Impossible d\'ouvrir l\'archive ZIP pour ajouter des fichiers.']);
         }
 
-        foreach ($batch as $item) {
+        // Extensions de fichiers déjà compressés : aucun calcul CPU Deflate inutile.
+        $noCompressExts = [
+            'jpg', 'jpeg', 'png', 'webp', 'gif', 'ico',
+            'mp4', 'm4v', 'mov', 'avi', 'mp3', 'ogg',
+            'zip', 'gz', 'bz2', 'tar', '7z', 'rar',
+            'woff', 'woff2', 'pdf',
+        ];
+
+        $maxBatchFiles = 50;
+        $maxBatchBytes = 8 * 1024 * 1024; // 8 Mo maximum par passe.
+        $startTime = microtime(true);
+        $maxSeconds = 3; // 3 secondes maximum pour garantir des réponses immédiates sur serveur de prod.
+
+        $processedCount = 0;
+        $processedBytes = 0;
+
+        for ($i = $offset; $i < $totalFiles; $i++) {
+            $item = $filesQueue[$i];
             $disk = $item['disk'];
             $rel = $item['zip'];
+
             if (is_file($disk) && is_readable($disk)) {
-                $zip->addFile($disk, 'files/' . $rel);
+                $fileSize = (int) filesize($disk);
+                $zipEntryName = 'files/' . $rel;
+
+                if ($zip->addFile($disk, $zipEntryName)) {
+                    $ext = strtolower(pathinfo($disk, PATHINFO_EXTENSION));
+                    if (in_array($ext, $noCompressExts, true) && method_exists($zip, 'setCompressionName')) {
+                        $zip->setCompressionName($zipEntryName, \ZipArchive::CM_STORE);
+                    }
+                    $processedBytes += $fileSize;
+                }
+            }
+
+            $processedCount++;
+
+            // Conditions d'arrêt du lot pour garantir des réponses rapides.
+            if ($processedCount >= $maxBatchFiles) {
+                break;
+            }
+            if ($processedBytes >= $maxBatchBytes) {
+                break;
+            }
+            if ((microtime(true) - $startTime) >= $maxSeconds) {
+                break;
             }
         }
 
         $zip->close();
 
-        $newOffset = $offset + count($batch);
+        $newOffset = $offset + $processedCount;
         $isFinished = ($newOffset >= $totalFiles);
         $progress = $totalFiles > 0 ? round(($newOffset / $totalFiles) * 100) : 100;
 
         wp_send_json_success([
-            'finished'   => $isFinished,
-            'offset'     => $newOffset,
-            'total'      => $totalFiles,
-            'progress'   => $progress,
-            'message'    => sprintf('Archivage des fichiers : %d / %d (%d%%)...', $newOffset, $totalFiles, $progress),
+            'finished' => $isFinished,
+            'offset'   => $newOffset,
+            'total'    => $totalFiles,
+            'progress' => $progress,
+            'message'  => sprintf('Archivage des fichiers : %d / %d (%d%%)...', $newOffset, $totalFiles, $progress),
         ]);
     }
 
@@ -312,12 +372,18 @@ class AjaxHandler {
         Archiver::cleanDirectory($tempDir);
 
         $size = file_exists($zipFilePath) ? filesize($zipFilePath) : 0;
+        $downloadUrl = wp_nonce_url(
+            admin_url('admin.php?page=eg-backup-list&action=eg_backup_download&file=' . urlencode($zipFilename)),
+            'eg_backup_download_action',
+            'nonce'
+        );
 
         wp_send_json_success([
-            'filename'   => $zipFilename,
-            'size'       => $size,
-            'size_human' => FileScanner::formatSize($size),
-            'message'    => 'Sauvegarde terminée avec succès !',
+            'filename'     => $zipFilename,
+            'download_url' => $downloadUrl,
+            'size'         => $size,
+            'size_human'   => FileScanner::formatSize($size),
+            'message'      => 'Sauvegarde terminée avec succès !',
         ]);
     }
 
@@ -445,25 +511,53 @@ class AjaxHandler {
             wp_send_json_error(['message' => 'Échec de l\'extraction de l\'archive.']);
         }
 
-        // Activation du mode maintenance
+        // Activation du mode maintenance.
         MaintenanceMode::enable();
+
+        // Génération d'un jeton secret de restauration hors base de données.
+        $restoreToken = wp_generate_password(48, false);
+        file_put_contents($tempDir . '.restore_token', $restoreToken);
 
         $sqlPath = $tempDir . 'database.sql';
         $sqlSize = file_exists($sqlPath) ? filesize($sqlPath) : 0;
 
         wp_send_json_success([
-            'job_id'   => $jobId,
-            'sql_size' => $sqlSize,
-            'has_sql'  => file_exists($sqlPath),
-            'message'  => 'Archive extraite. Mode maintenance activé.',
+            'job_id'        => $jobId,
+            'restore_token' => $restoreToken,
+            'sql_size'      => $sqlSize,
+            'has_sql'       => file_exists($sqlPath),
+            'message'       => 'Archive extraite. Mode maintenance activé.',
         ]);
+    }
+
+    /**
+     * Vérifie la sécurité des requêtes de restauration via le jeton de job ou les permissions WordPress.
+     * Permet aux étapes de restauration de continuer même si l'écrasement de wp_users/wp_usermeta
+     * invalide la session active de l'administrateur.
+     */
+    private function verifyRestoreSecurity() {
+        $jobId = sanitize_text_field($_POST['job_id'] ?? '');
+        $restoreToken = sanitize_text_field($_POST['restore_token'] ?? '');
+
+        if (!empty($jobId) && !empty($restoreToken) && preg_match('/^restore_[a-zA-Z0-9_-]+$/', $jobId)) {
+            $tokenFile = Archiver::getTempDir() . $jobId . '/.restore_token';
+            if (file_exists($tokenFile) && is_readable($tokenFile)) {
+                $storedToken = trim((string) file_get_contents($tokenFile));
+                if (!empty($storedToken) && hash_equals($storedToken, $restoreToken)) {
+                    return;
+                }
+            }
+        }
+
+        // Repli sur la vérification standard si le jeton est manquant ou invalide.
+        $this->verifySecurity();
     }
 
     /**
      * Importe le fichier SQL par lots.
      */
     public function eg_restore_step_db() {
-        $this->verifySecurity();
+        $this->verifyRestoreSecurity();
 
         $jobId = sanitize_text_field($_POST['job_id'] ?? '');
         $offset = (int) ($_POST['offset'] ?? 0);
@@ -500,7 +594,7 @@ class AjaxHandler {
      * Exécute le Search & Replace pour la migration de domaine.
      */
     public function eg_restore_step_replace() {
-        $this->verifySecurity();
+        $this->verifyRestoreSecurity();
 
         $oldUrl = sanitize_text_field($_POST['old_url'] ?? '');
         $newUrl = sanitize_text_field($_POST['new_url'] ?? '');
@@ -519,7 +613,7 @@ class AjaxHandler {
      * Restaure les fichiers vers wp-content.
      */
     public function eg_restore_step_files() {
-        $this->verifySecurity();
+        $this->verifyRestoreSecurity();
 
         $jobId = sanitize_text_field($_POST['job_id'] ?? '');
         $tempDir = Archiver::getTempDir() . $jobId . '/';
@@ -527,6 +621,15 @@ class AjaxHandler {
 
         if (is_dir($filesDir)) {
             $this->copyDirectory($filesDir, WP_CONTENT_DIR);
+        } else {
+            // Prise en charge des archives avec dossiers directement à la racine.
+            $knownFolders = ['uploads', 'themes', 'gallery', 'galleries'];
+            foreach ($knownFolders as $folder) {
+                $candidate = $tempDir . $folder . '/';
+                if (is_dir($candidate)) {
+                    $this->copyDirectory($candidate, trailingslashit(WP_CONTENT_DIR) . $folder . '/');
+                }
+            }
         }
 
         wp_send_json_success(['message' => 'Fichiers restaurés avec succès.']);
@@ -536,16 +639,64 @@ class AjaxHandler {
      * Finalise la restauration : désactivation du mode maintenance et nettoyage temp.
      */
     public function eg_restore_finalize() {
-        $this->verifySecurity();
+        $this->verifyRestoreSecurity();
 
         $jobId = sanitize_text_field($_POST['job_id'] ?? '');
         $tempDir = Archiver::getTempDir() . $jobId . '/';
+
+        // 1. Restauration dédiée des réglages de thème si le fichier JSON est présent.
+        $themeSettingsFile = $tempDir . 'theme_settings.json';
+        if (file_exists($themeSettingsFile)) {
+            $this->restoreThemeSettings($themeSettingsFile);
+        }
+
+        // 2. Synchronisation de secours entre thème parent et enfant (ex: Blocksy / Blocksy Child).
+        $activeTheme = wp_get_theme();
+        $curStylesheet = $activeTheme->get_stylesheet();
+        $curTemplate = $activeTheme->get_template();
+        if ($curStylesheet !== $curTemplate) {
+            $parentMods = get_option("theme_mods_{$curTemplate}");
+            $childMods = get_option("theme_mods_{$curStylesheet}");
+            if (!empty($parentMods) && (empty($childMods) || count((array) $childMods) <= 1)) {
+                update_option("theme_mods_{$curStylesheet}", $parentMods);
+            } elseif (!empty($childMods) && (empty($parentMods) || count((array) $parentMods) <= 1)) {
+                update_option("theme_mods_{$curTemplate}", $childMods);
+            }
+        }
+
+        // 3. Purge des transitoires de cache de style dynamique de Blocksy.
+        global $wpdb;
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_blocksy_%' OR option_name LIKE '_transient_timeout_blocksy_%'");
+
+        // 4. Vider le cache objet de WordPress pour forcer la prise en compte immédiate.
+        wp_cache_flush();
+        if (function_exists('wp_clean_themes_cache')) {
+            wp_clean_themes_cache();
+        }
 
         Archiver::cleanDirectory($tempDir);
         MaintenanceMode::disable();
 
         wp_send_json_success([
             'message' => 'Restauration terminée avec succès ! Le site est à nouveau en ligne.',
+        ]);
+    }
+
+    /**
+     * Annule la restauration en cas d'erreur : désactivation maintenance et nettoyage temp.
+     */
+    public function eg_restore_cancel() {
+        $this->verifyRestoreSecurity();
+
+        $jobId = sanitize_text_field($_POST['job_id'] ?? '');
+        if (!empty($jobId)) {
+            $tempDir = Archiver::getTempDir() . $jobId . '/';
+            Archiver::cleanDirectory($tempDir);
+        }
+        MaintenanceMode::disable();
+
+        wp_send_json_success([
+            'message' => 'Mode maintenance désactivé avec succès.',
         ]);
     }
 
@@ -653,18 +804,98 @@ class AjaxHandler {
                         $diskPath = wp_normalize_path($file->getRealPath());
                         $zipPath = ltrim(str_replace($contentDir, '', $diskPath), '/');
 
-                        $filesQueue[] = [
+                        $filesQueue[$diskPath] = [
                             'disk' => $diskPath,
                             'zip'  => $zipPath,
                         ];
                     }
                 }
             } catch (\Exception $e) {
-                // Ignore permissions or broken symlinks
+                // Ignore permissions or broken symlinks.
             }
         }
 
-        return $filesQueue;
+        return array_values($filesQueue);
+    }
+
+    /**
+     * Exporte un instantané JSON dédié des réglages du thème actif (Blocksy, etc.).
+     *
+     * @param string $targetFile Chemin absolu du fichier JSON cible.
+     */
+    private function exportThemeSettings($targetFile) {
+        global $wpdb;
+
+        $activeTheme = wp_get_theme();
+        $stylesheet = $activeTheme->get_stylesheet();
+        $template = $activeTheme->get_template();
+
+        $themeData = [
+            'stylesheet' => $stylesheet,
+            'template'   => $template,
+            'theme_mods' => get_theme_mods(),
+            'options'    => [],
+        ];
+
+        // Collecter les options associées aux thèmes populaires (Blocksy, Astra, etc.).
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT option_name FROM {$wpdb->options} 
+                 WHERE option_name LIKE %s 
+                    OR option_name LIKE %s 
+                    OR option_name LIKE 'blocksy_%' 
+                    OR option_name LIKE 'astra_%' 
+                    OR option_name LIKE 'kadence_%'",
+                'theme_mods_' . $stylesheet,
+                'theme_mods_' . $template
+            ),
+            ARRAY_A
+        );
+
+        if (!empty($rows)) {
+            foreach ($rows as $row) {
+                $optName = $row['option_name'];
+                $themeData['options'][$optName] = get_option($optName);
+            }
+        }
+
+        file_put_contents($targetFile, wp_json_encode($themeData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+    }
+
+    /**
+     * Restaure les réglages de thème et assure la synchronisation des palettes et styles.
+     *
+     * @param string $filePath Chemin du fichier JSON de réglages.
+     */
+    private function restoreThemeSettings($filePath) {
+        $raw = file_get_contents($filePath);
+        if (!$raw) {
+            return;
+        }
+
+        $themeData = json_decode($raw, true);
+        if (!is_array($themeData)) {
+            return;
+        }
+
+        $activeTheme = wp_get_theme();
+        $currentStylesheet = $activeTheme->get_stylesheet();
+        $currentTemplate = $activeTheme->get_template();
+
+        // 1. Restauration des options spécifiques (blocksy_*, etc.).
+        if (!empty($themeData['options']) && is_array($themeData['options'])) {
+            foreach ($themeData['options'] as $name => $val) {
+                update_option($name, $val);
+            }
+        }
+
+        // 2. Restauration des theme_mods.
+        if (!empty($themeData['theme_mods']) && is_array($themeData['theme_mods'])) {
+            update_option("theme_mods_{$currentStylesheet}", $themeData['theme_mods']);
+            if ($currentStylesheet !== $currentTemplate) {
+                update_option("theme_mods_{$currentTemplate}", $themeData['theme_mods']);
+            }
+        }
     }
 }
 

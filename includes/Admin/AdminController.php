@@ -102,8 +102,9 @@ class AdminController {
                 true
             );
             wp_localize_script('eg-backup-admin', 'egBackupData', [
-                'ajaxUrl' => admin_url('admin-ajax.php'),
-                'nonce'   => wp_create_nonce('eg_backup_nonce'),
+                'ajaxUrl'       => admin_url('admin-ajax.php'),
+                'nonce'         => wp_create_nonce('eg_backup_nonce'),
+                'downloadNonce' => wp_create_nonce('eg_backup_download_action'),
             ]);
         }
     }
@@ -120,7 +121,10 @@ class AdminController {
             wp_die('Autorisation refusée.');
         }
 
-        check_admin_referer('eg_backup_download_action', 'nonce');
+        $nonce = sanitize_text_field(wp_unslash($_GET['nonce'] ?? $_GET['_wpnonce'] ?? ''));
+        if (!wp_verify_nonce($nonce, 'eg_backup_download_action') && !wp_verify_nonce($nonce, 'eg_backup_nonce')) {
+            wp_die('Le lien suivi est expiré.');
+        }
 
         $filename = sanitize_file_name($_GET['file'] ?? '');
         $filePath = Archiver::getStorageDir() . $filename;
@@ -129,7 +133,7 @@ class AdminController {
             wp_die('Fichier de sauvegarde introuvable.');
         }
 
-        // Envoi des en-têtes HTTP de téléchargement
+        // Envoi des en-têtes HTTP de téléchargement.
         header('Content-Description: File Transfer');
         header('Content-Type: application/zip');
         header('Content-Disposition: attachment; filename="' . basename($filePath) . '"');

@@ -35,10 +35,14 @@ class DatabaseImporter {
         $queriesCount = 0;
         $bytesRead = 0;
 
-        // Désactivation des clés étrangères pour l'import
+        // Désactivation des clés étrangères pour l'import.
         $wpdb->query("SET FOREIGN_KEY_CHECKS = 0;");
 
-        while (!feof($handle) && $bytesRead < $maxBytesToRead) {
+        $inString = false;
+        $stringChar = '';
+        $escaped = false;
+
+        while (!feof($handle)) {
             $line = fgets($handle);
             if ($line === false) {
                 break;
@@ -46,19 +50,60 @@ class DatabaseImporter {
             $bytesRead += strlen($line);
 
             $trimmed = trim($line);
-            // Ignorer les commentaires et lignes vides
-            if (empty($trimmed) || strpos($trimmed, '--') === 0 || strpos($trimmed, '/*') === 0) {
+            // Ignorer les commentaires et lignes vides hors d'une chaîne SQL.
+            if (!$inString && (empty($trimmed) || strpos($trimmed, '--') === 0 || strpos($trimmed, '/*') === 0)) {
                 continue;
             }
 
-            $currentQuery .= $line;
+            $lineLength = strlen($line);
+            for ($i = 0; $i < $lineLength; $i++) {
+                $c = $line[$i];
+                $currentQuery .= $c;
 
-            // Détection de la fin d'une requête (point-virgule en fin de ligne)
-            if (substr(rtrim($trimmed), -1) === ';') {
-                $wpdb->query($currentQuery);
-                $queriesCount++;
-                $currentQuery = '';
+                if ($inString) {
+                    if ($escaped) {
+                        $escaped = false;
+                    } elseif ($c === '\\') {
+                        $escaped = true;
+                    } elseif ($c === $stringChar) {
+                        // Échappement SQL via double quote ''
+                        if ($stringChar === "'" && $i + 1 < $lineLength && $line[$i + 1] === "'") {
+                            $currentQuery .= $line[++$i];
+                        } else {
+                            $inString = false;
+                        }
+                    }
+                } else {
+                    if ($c === "'" || $c === '"') {
+                        $inString = true;
+                        $stringChar = $c;
+                    } elseif ($c === ';') {
+                        // Fin réelle d'une instruction SQL hors d'une chaîne.
+                        $cleanQuery = trim($currentQuery);
+                        if (!empty($cleanQuery)) {
+                            $wpdb->query($cleanQuery);
+                            $queriesCount++;
+                        }
+                        $currentQuery = '';
+                    }
+                }
             }
+
+            // Arrêt du lot dès qu'une requête complète est terminée et le quota d'octets atteint.
+            if (trim($currentQuery) === '') {
+                $currentQuery = '';
+                if ($bytesRead >= $maxBytesToRead) {
+                    break;
+                }
+            }
+        }
+
+        // Exécution de toute requête résiduelle avant la fin de fichier.
+        $cleanQuery = trim($currentQuery);
+        if (!empty($cleanQuery)) {
+            $wpdb->query($cleanQuery);
+            $queriesCount++;
+            $currentQuery = '';
         }
 
         $newOffset = ftell($handle);
