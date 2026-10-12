@@ -1,0 +1,440 @@
+/* Styles d'administration pour EG Backup & Restore */
+.eg-backup-wrap {
+    max-width: 1200px;
+    margin: 20px 20px 20px 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+}
+
+.eg-header {
+    margin-bottom: 24px;
+}
+
+.eg-header h1 {
+    font-size: 26px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #1d2327;
+}
+
+.eg-header h1 .dashicons {
+    font-size: 32px;
+    width: 32px;
+    height: 32px;
+    color: #2271b1;
+}
+
+.eg-subtitle {
+    font-size: 14px;
+    color: #646970;
+    margin: 4px 0 0 0;
+}
+
+/* Cartes */
+.eg-card {
+    background: #ffffff;
+    border: 1px solid #c3c4c7;
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.eg-card h2 {
+    font-size: 18px;
+    margin-top: 0;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #1d2327;
+    border-bottom: 1px solid #f0f0f1;
+    padding-bottom: 10px;
+}
+
+.eg-card h2 .dashicons {
+    color: #2271b1;
+}
+
+/* Info card */
+.eg-info-card {
+    display: flex;
+    gap: 18px;
+    background: #f0f6fc;
+    border-left: 4px solid #2271b1;
+}
+
+.eg-info-icon .dashicons {
+    font-size: 36px;
+    width: 36px;
+    height: 36px;
+    color: #2271b1;
+}
+
+.eg-info-content h3 {
+    margin: 0 0 8px 0;
+    font-size: 15px;
+    color: #0c4a6e;
+}
+
+.eg-info-content ul {
+    margin: 0;
+    padding-left: 18px;
+    color: #1e293b;
+    line-height: 1.6;
+}
+
+/* Statistiques */
+.eg-stats-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.eg-stat-card {
+    flex: 1;
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 8px;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+.eg-stat-card.eg-stat-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f8fafc;
+}
+
+.eg-stat-card .stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1d2327;
+}
+
+.eg-stat-card .stat-label {
+    font-size: 13px;
+    color: #646970;
+    margin-top: 4px;
+}
+
+/* Arborescence de fichiers */
+.eg-tree-actions {
+    display: flex;
+    gap: 10px;
+    margin: 16px 0;
+    flex-wrap: wrap;
+}
+
+.eg-file-tree-container {
+    max-height: 380px;
+    overflow-y: auto;
+    border: 1px solid #dcdcde;
+    border-radius: 6px;
+    background: #fafafa;
+    padding: 16px;
+}
+
+.eg-placeholder-text {
+    color: #646970;
+    font-style: italic;
+    margin: 10px 0;
+}
+
+.eg-tree-list {
+    list-style: none;
+    margin: 0;
+    padding-left: 0;
+}
+
+.eg-tree-list .eg-tree-list {
+    padding-left: 24px;
+    border-left: 1px dashed #dcdcde;
+    margin-left: 10px;
+}
+
+.eg-tree-item {
+    margin: 6px 0;
+}
+
+.eg-tree-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.eg-tree-label:hover {
+    background: #f0f0f1;
+}
+
+.eg-tree-label .dashicons {
+    color: #eab308;
+}
+
+.eg-badge-size {
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.eg-badge-files {
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.eg-badge-rec {
+    background: #dcfce7;
+    color: #166534;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+/* Barre de progression et indicateurs d'étapes */
+.eg-steps-indicator {
+    display: flex;
+    gap: 12px;
+    margin: 20px 0 15px 0;
+}
+
+.eg-step {
+    flex: 1;
+    padding: 10px;
+    background: #f0f0f1;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #646970;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+.eg-step .step-num {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    line-height: 20px;
+    background: #dcdcde;
+    color: #3c434a;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+
+.eg-step.active {
+    background: #e0f2fe;
+    color: #0369a1;
+}
+
+.eg-step.active .step-num {
+    background: #0284c7;
+    color: #fff;
+}
+
+.eg-step.done {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.eg-step.done .step-num {
+    background: #22c55e;
+    color: #fff;
+}
+
+.eg-progress-bar-wrapper {
+    height: 18px;
+    background: #e2e8f0;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 10px;
+}
+
+.eg-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #2271b1, #38bdf8);
+    transition: width 0.3s ease;
+}
+
+.eg-progress-status {
+    font-weight: 600;
+    color: #1e293b;
+    margin-bottom: 12px;
+}
+
+.eg-log-console {
+    background: #0f172a;
+    color: #e2e8f0;
+    font-family: Consolas, Monaco, "Courier New", monospace;
+    font-size: 12px;
+    padding: 14px;
+    border-radius: 6px;
+    max-height: 180px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    line-height: 1.5;
+}
+
+.eg-log-console .log-line {
+    margin-bottom: 4px;
+}
+.eg-log-console .log-info { color: #38bdf8; }
+.eg-log-console .log-success { color: #4ade80; }
+.eg-log-console .log-error { color: #f87171; }
+
+/* Boîte de succès */
+.eg-success-box {
+    margin-top: 20px;
+    padding: 20px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 8px;
+}
+
+.eg-success-box h3 {
+    color: #166534;
+    margin-top: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.eg-success-box h3 .dashicons {
+    color: #22c55e;
+    font-size: 24px;
+}
+
+.eg-success-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+/* Badges tableau */
+.eg-badge-pill {
+    display: inline-block;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 12px;
+}
+
+.eg-badge-installed {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.eg-badge-missing {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.eg-badge-diff {
+    background: #fef3c7;
+    color: #b45309;
+}
+
+.eg-manifest-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 14px;
+}
+
+.eg-meta-item strong {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 2px;
+}
+
+.eg-meta-item span {
+    font-size: 14px;
+    color: #1e293b;
+    font-weight: 600;
+}
+
+.eg-source-options {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-top: 14px;
+}
+
+.eg-source-box {
+    flex: 1;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 16px;
+}
+
+.eg-source-box h4 {
+    margin: 0 0 10px 0;
+    font-size: 13px;
+    color: #334155;
+}
+
+.eg-source-separator {
+    font-weight: 700;
+    color: #94a3b8;
+}
+
+.eg-form-inline {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.eg-form-row {
+    display: flex;
+    gap: 20px;
+    margin-top: 10px;
+}
+
+.eg-form-row label {
+    flex: 1;
+}
+
+.eg-form-row input {
+    width: 100%;
+    margin-top: 4px;
+}
+
+.eg-migration-options-box {
+    margin-top: 24px;
+    padding: 18px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+}
+
+.eg-restore-launch-bar {
+    margin-top: 24px;
+    text-align: right;
+}
+
+.eg-notice-warning.inline {
+    background: #fffbeb;
+    border-left: 4px solid #f59e0b;
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+}

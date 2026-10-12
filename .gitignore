@@ -1,0 +1,18 @@
+# Dépendances
+/vendor/
+/node_modules/
+
+# Builds et assets générés (selon ton workflow)
+/dist/
+/build/
+
+# Fichiers de configuration / OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+
+# Fichiers d'environnement
+.env
+.env.local

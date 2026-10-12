@@ -1,0 +1,28 @@
+{
+  "name": "eg-backup",
+  "version": "1.0.0",
+  "description": "Sauvegarde et restauration intelligente de configuration et données WordPress sous forme d'extension.",
+  "main": "eg-backup.php",
+  "scripts": {
+    "build:css": "node scripts/build-css.js",
+    "build:js": "node scripts/build-js.js",
+    "build": "node scripts/build-css.js && node scripts/build-js.js",
+    "version": "node scripts/version-sync.cjs",
+    "package": "node scripts/package.cjs"
+  },
+  "keywords": [
+    "wordpress",
+    "plugin",
+    "backup",
+    "restore"
+  ],
+  "author": "EG Dev",
+  "license": "GPL-2.0-or-later",
+  "devDependencies": {
+    "adm-zip": "^0.5.16",
+    "esbuild": "^0.25.0",
+    "minimatch": "^10.0.1",
+    "rtlcss": "^4.3.0",
+    "sass": "^1.85.0"
+  }
+}

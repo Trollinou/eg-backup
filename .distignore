@@ -1,0 +1,14 @@
+/.git/
+/.github/
+/node_modules/
+/src/
+/scripts/
+/dist-temp/
+/.distignore
+/package.json
+/package-lock.json
+/tsconfig.json
+*.zip
+*.sh
+.DS_Store
+Thumbs.db
