@@ -42,3 +42,30 @@ Ce document définit les règles de développement et conventions obligatoires p
    - Pour créer l'archive ZIP de distribution du plugin WordPress, exécuter `npm run package`. Le script compile automatiquement les assets en mode production avant de créer l'archive.
 3. **Synchronisation des versions** :
    - Pour mettre à jour la version du plugin sur l'ensemble des fichiers, exécuter `node scripts/version-sync.cjs <version>` (ou `npm run version`).
+
+---
+
+## 4. Architecture WordPress & Optimisation des Assets (Performance & DevTools Coverage)
+
+Pour garantir une couverture de code optimale (DevTools Coverage) et respecter les recommandations PageSpeed / Site Kit :
+
+- **Séparation stricte Register vs Enqueue** :
+  - Toujours déclarer les assets avec `wp_register_style()` et `wp_register_script()` avant tout appel à `wp_enqueue_*()`.
+  - Ne jamais exécuter de `wp_enqueue_style()` ou `wp_enqueue_script()` inconditionnel ou global sur les hooks `wp_enqueue_scripts` ou `admin_enqueue_scripts`.
+- **Chargement contextuel et à la demande** :
+  - **Back-end / Admin** : Ne charger les assets que sur les pages d'options ou écrans du plugin. Récupérer les identifiants retournés par `add_menu_page()` / `add_submenu_page()` et filtrer strictement via le paramètre `$hook_suffix` de `admin_enqueue_scripts( $hook_suffix )` ou `get_current_screen()`.
+  - **Front-end** : Vérifier le contexte avant tout enqueue (conditional tags `is_page()`, arguments `style`/`view_script_module` de `register_block_type()` pour Gutenberg, ou dans le callback de rendu des shortcodes).
+- **Stratégie de chargement des scripts (WordPress 6.3+)** :
+  - Déclarer systématiquement la stratégie `defer` ou `async` via le tableau d'options de `wp_register_script()` :
+    ```php
+    wp_register_script(
+        'handle-script',
+        EG_BACKUP_PLUGIN_URL . 'assets/js/mon-script.js',
+        [],
+        EG_BACKUP_VERSION,
+        [ 'strategy' => 'defer', 'in_footer' => true ]
+    );
+    ```
+- **Granularité des bundles** :
+  - Bannir les fichiers CSS/JS monolithiques regroupant plusieurs pages distinctes.
+  - Découper le code source TypeScript (`src/ts/`) en scripts atomiques dédiés à chaque vue (ex. `backup.ts` pour la création, `list.ts` pour la suppression d'archives, `restore.ts` pour la restauration) afin de maintenir un taux de code JavaScript inutilisé proche de 0%.
