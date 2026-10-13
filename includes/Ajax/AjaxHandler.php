@@ -25,6 +25,7 @@ class AjaxHandler {
             'eg_backup_start',
             'eg_backup_step_db',
             'eg_backup_prepare_files',
+            'eg_backup_poll_cli',
             'eg_backup_step_files',
             'eg_backup_finalize',
             'eg_backup_delete',
@@ -282,20 +283,22 @@ class AjaxHandler {
         $zipFilename = $prefix . wp_date('Y-m-d_H-i-s') . '_' . sanitize_title(get_bloginfo('name')) . '.zip';
         $zipFilePath = Archiver::getStorageDir() . $zipFilename;
 
-        // Tenter l'archivage CLI ultra-rapide si disponible
+        // Tenter l'archivage CLI ultra-rapide si disponible (mode asynchrone pour éviter tout timeout HTTP 500)
         if (Archiver::isCliZipAvailable()) {
-            $cliSuccess = Archiver::archiveWithCliZip($tempDir, $zipFilePath, $selectedFolders, $excludeThumbs, $extraExcludes);
-            if ($cliSuccess) {
-                $state['cli_completed'] = true;
+            $asyncStarted = Archiver::startAsyncCliZip($tempDir, $zipFilePath, $selectedFolders, $excludeThumbs, $extraExcludes);
+            if ($asyncStarted) {
+                $state['cli_async']     = true;
+                $state['cli_completed'] = false;
                 $state['zip_filename']  = $zipFilename;
                 $state['zip_filepath']  = $zipFilePath;
                 $state['total_files']   = $totalFiles;
                 file_put_contents($stateFile, wp_json_encode($state));
 
                 wp_send_json_success([
-                    'total_files'   => $totalFiles,
-                    'cli_completed' => true,
-                    'message'       => sprintf('Archivage ultra-rapide CLI réussi (%d fichiers archivés).', $totalFiles),
+                    'total_files'     => $totalFiles,
+                    'cli_in_progress' => true,
+                    'cli_completed'   => false,
+                    'message'         => sprintf('Archivage ultra-rapide CLI initié en arrière-plan (%d fichiers à archiver)...', $totalFiles),
                 ]);
                 return;
             }
@@ -331,6 +334,33 @@ class AjaxHandler {
             'cli_completed' => false,
             'message'       => $prepMessage,
         ]);
+    }
+
+    /**
+     * Sonde l'état d'avancement d'un archivage CLI asynchrone (anti-timeout HTTP).
+     */
+    public function eg_backup_poll_cli() {
+        $this->verifySecurity();
+
+        $jobId = sanitize_text_field($_POST['job_id'] ?? '');
+        $tempDir = Archiver::getTempDir() . $jobId . '/';
+        $stateFile = $tempDir . 'state.json';
+
+        if (!file_exists($stateFile)) {
+            wp_send_json_error(['message' => 'Job introuvable.']);
+        }
+
+        $state = json_decode(file_get_contents($stateFile), true);
+        $zipFilePath = $state['zip_filepath'] ?? '';
+
+        $status = Archiver::checkCliZipStatus($tempDir, $zipFilePath);
+
+        if (!empty($status['finished']) && !empty($status['success'])) {
+            $state['cli_completed'] = true;
+            file_put_contents($stateFile, wp_json_encode($state));
+        }
+
+        wp_send_json_success($status);
     }
 
     /**
@@ -607,15 +637,26 @@ class AjaxHandler {
         $tempDir = Archiver::getTempDir() . $jobId . '/';
         wp_mkdir_p($tempDir);
 
-        // Extraction de l'archive
-        $extracted = Archiver::extractZip($zipPath, $tempDir);
-        if (!$extracted) {
-            wp_send_json_error(['message' => 'Échec de l\'extraction de l\'archive.']);
+        // Initialisation de la restauration : extraction ultra-rapide des métadonnées et BDD (< 0.1s)
+        $initResult = Archiver::initRestoreJob($zipPath, $tempDir);
+        if (!$initResult) {
+            wp_send_json_error(['message' => 'Échec de l\'inspection de l\'archive ZIP.']);
         }
 
         $manifestContent = file_exists($tempDir . 'manifest.json') ? file_get_contents($tempDir . 'manifest.json') : '';
         $manifest = $manifestContent ? json_decode($manifestContent, true) : null;
         $isMediaOnly = ($manifest && ($manifest['backup_type'] ?? '') === 'media');
+
+        // Sauvegarde de l'état du job de restauration
+        $state = [
+            'job_id'        => $jobId,
+            'zip_path'      => $zipPath,
+            'total_files'   => $initResult['total_files'],
+            'num_entries'   => $initResult['num_entries'],
+            'is_media_only' => $isMediaOnly,
+            'created_at'    => time(),
+        ];
+        file_put_contents($tempDir . 'state.json', wp_json_encode($state));
 
         // Activation du mode maintenance uniquement pour les restaurations incluant la BDD
         if (!$isMediaOnly) {
@@ -634,8 +675,9 @@ class AjaxHandler {
             'restore_token' => $restoreToken,
             'sql_size'      => $sqlSize,
             'has_sql'       => file_exists($sqlPath),
+            'total_files'   => $initResult['total_files'],
             'is_media_only' => $isMediaOnly,
-            'message'       => $isMediaOnly ? 'Archive extraite. Prêt pour la restauration des fichiers.' : 'Archive extraite. Mode maintenance activé.',
+            'message'       => $isMediaOnly ? 'Archive prête. Prêt pour la restauration des fichiers.' : 'Archive prête. Mode maintenance activé.',
         ]);
     }
 
@@ -725,34 +767,47 @@ class AjaxHandler {
     }
 
     /**
-     * Restaure les fichiers vers wp-content.
+     * Restaure les fichiers vers wp-content par micro-lots (anti-timeout HTTP).
      */
     public function eg_restore_step_files() {
         $this->verifyRestoreSecurity();
+        @ini_set('memory_limit', '512M');
+        @set_time_limit(180);
 
         $jobId = sanitize_text_field($_POST['job_id'] ?? '');
+        $offset = (int) ($_POST['offset'] ?? 0);
         $tempDir = Archiver::getTempDir() . $jobId . '/';
-        $filesDir = $tempDir . 'files/';
+        $stateFile = $tempDir . 'state.json';
 
-        if (is_dir($filesDir)) {
-            $this->copyDirectory($filesDir, WP_CONTENT_DIR);
-        } else {
-            // Prise en charge de tous les dossiers extraits (uploads, gallery, club-documents, etc.)
-            $items = scandir($tempDir);
-            if ($items !== false) {
-                foreach ($items as $item) {
-                    if ($item === '.' || $item === '..' || in_array($item, ['manifest.json', 'database.sql', 'theme_settings.json', '.restore_token', 'state.json'], true)) {
-                        continue;
-                    }
-                    $candidate = $tempDir . $item . '/';
-                    if (is_dir($candidate)) {
-                        $this->copyDirectory($candidate, trailingslashit(WP_CONTENT_DIR) . $item . '/');
-                    }
-                }
-            }
+        if (!file_exists($stateFile)) {
+            wp_send_json_error(['message' => 'Job introuvable.']);
         }
 
-        wp_send_json_success(['message' => 'Fichiers restaurés avec succès.']);
+        $state = json_decode(file_get_contents($stateFile), true);
+        $zipPath = $state['zip_path'] ?? '';
+
+        if (!file_exists($zipPath)) {
+            wp_send_json_error(['message' => 'Archive ZIP introuvable pour la restauration.']);
+        }
+
+        $result = Archiver::restoreFilesChunk($zipPath, $offset, 150, 16777216);
+
+        if (isset($result['error'])) {
+            wp_send_json_error(['message' => $result['error']]);
+        }
+
+        $progressMsg = $result['eof']
+            ? 'Tous les fichiers ont été restaurés avec succès.'
+            : sprintf('Restauration des fichiers en cours (%d%%)...', $result['progress']);
+
+        wp_send_json_success([
+            'eof'             => $result['eof'],
+            'finished'        => $result['eof'],
+            'offset'          => $result['new_offset'],
+            'processed_files' => $result['processed_files'],
+            'progress'        => $result['progress'],
+            'message'         => $progressMsg,
+        ]);
     }
 
     /**

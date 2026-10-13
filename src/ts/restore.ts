@@ -373,29 +373,44 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function processRestoreFiles(jobId: string): Promise<void> {
-        updateRestoreProgress(75, 'Restauration des fichiers vers wp-content...');
-        logMessage('info', 'Copie des fichiers vers leurs dossiers d\'origine...');
-
+    async function processRestoreFiles(jobId: string, offset: number = 0): Promise<void> {
         try {
-            const response = await wpAjax<{ message: string }>(ajaxUrl, {
+            const response = await wpAjax<{
+                eof?: boolean;
+                finished?: boolean;
+                offset: number;
+                processed_files: number;
+                progress: number;
+                message: string;
+            }>(ajaxUrl, {
                 action: 'eg_restore_step_files',
                 nonce,
                 job_id: jobId,
                 restore_token: restoreToken,
+                offset,
             });
 
-            if (!response.success) {
+            if (!response.success || !response.data) {
                 handleRestoreError(extractErrorMessage(response, 'Erreur lors de la copie des fichiers.'), jobId);
                 return;
             }
 
-            logMessage('success', 'Fichiers restaurés avec succès.');
-            markRestoreStepDone('rstep-files');
-            activateRestoreStep('rstep-finalize');
+            const data = response.data;
+            // Progression globale de l'étape fichiers : entre 60% et 94%
+            const filesProgress = Math.min(94, Math.round(60 + (data.progress * 0.34)));
+            updateRestoreProgress(filesProgress, data.message);
 
-            // Étape 5 : Finalisation
-            await processRestoreFinalize(jobId);
+            if (data.eof || data.finished) {
+                logMessage('success', data.message || 'Fichiers restaurés avec succès.');
+                markRestoreStepDone('rstep-files');
+                activateRestoreStep('rstep-finalize');
+
+                // Étape 5 : Finalisation
+                await processRestoreFinalize(jobId);
+            } else {
+                // Micro-lot suivant
+                await processRestoreFiles(jobId, data.offset);
+            }
         } catch (err: any) {
             handleRestoreError(`Erreur réseau lors de la restauration des fichiers : ${err.message || err}`, jobId);
         }

@@ -92,6 +92,66 @@ class FileScanner {
             }
         }
 
+        // 4. Le candidat est un dossier parent conteneur dont les sous-dossiers sont couverts par des hooks.
+        // Exemple : le candidat est "uploads/eg-media" et l'addon a déclaré le hook "uploads/eg-media/originals".
+        // Si tous les sous-dossiers substantiels de "eg-media" sont couverts par des hooks enregistrés,
+        // le dossier parent "eg-media" ne doit pas apparaître dans la médiathèque standard.
+        $hasHooksInside = false;
+        $childHookRelPaths = [];
+        foreach ($registeredLocations as $loc) {
+            $locRel = !empty($loc['relative_path']) ? strtolower(trim(wp_normalize_path($loc['relative_path']), '/')) : '';
+            if ($locRel !== '' && strpos($locRel, $normRel . '/') === 0) {
+                $hasHooksInside = true;
+                $childHookRelPaths[] = $locRel;
+            }
+        }
+
+        if ($hasHooksInside && is_dir($fullPath)) {
+            $items = @scandir($fullPath);
+            if ($items !== false) {
+                $hasUncoveredContent = false;
+                $ignoredFiles = ['index.php', 'index.html', '.htaccess', '.gitignore', 'web.config', 'robots.txt'];
+                $ignoredDirs = ['cache', 'temp', 'wpcache', 'thumbs', '.thumbs'];
+
+                foreach ($items as $item) {
+                    if ($item === '.' || $item === '..') {
+                        continue;
+                    }
+                    $lowerItem = strtolower($item);
+                    $itemFullPath = $fullPath . '/' . $item;
+                    $itemRelPath = $normRel . '/' . $lowerItem;
+
+                    // Fichiers de protection ou de configuration serveur ignorés
+                    if (is_file($itemFullPath) && in_array($lowerItem, $ignoredFiles, true)) {
+                        continue;
+                    }
+
+                    // Répertoires temporaires ou caches de l'addon ignorés
+                    if (is_dir($itemFullPath) && in_array($lowerItem, $ignoredDirs, true)) {
+                        continue;
+                    }
+
+                    // Vérifier si ce sous-dossier correspond à un hook enfant ou contient un hook enfant
+                    $isItemCovered = false;
+                    foreach ($childHookRelPaths as $hookRel) {
+                        if ($itemRelPath === $hookRel || strpos($itemRelPath, $hookRel . '/') === 0 || strpos($hookRel, $itemRelPath . '/') === 0) {
+                            $isItemCovered = true;
+                            break;
+                        }
+                    }
+
+                    if (!$isItemCovered) {
+                        $hasUncoveredContent = true;
+                        break;
+                    }
+                }
+
+                if (!$hasUncoveredContent) {
+                    return true;
+                }
+            }
+        }
+
         return false;
     }
 

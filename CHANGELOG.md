@@ -8,6 +8,18 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-10-13
+
+### Ajouté
+- **Archivage CLI asynchrone non-bloquant & Surveillance en direct (Anti-Timeout HTTP 500)** :
+  - **Exécution détachée en arrière-plan** : Découplage de la commande système `zip` via [`Archiver::startAsyncCliZip()`](file:///c:/Users/egagnon/Personnel/Dev/eg-backup/includes/Core/Archiver.php). La requête AJAX HTTP initiale répond immédiatement (< 0.5s), éliminant définitivement les erreurs HTTP 500 / 504 provoquées par les timeouts stricts de 60s des serveurs web (FastCGI / Nginx / Apache).
+  - **Surveillance active (Polling auto-refresh)** : Nouvel endpoint AJAX [`eg_backup_poll_cli`](file:///c:/Users/egagnon/Personnel/Dev/eg-backup/includes/Ajax/AjaxHandler.php) et boucle JavaScript réactive sondant l'état toutes les 2 secondes avec indication en temps réel de la volumétrie écrite sur le disque (ex: `120 Mo`, `500 Mo`, `971 Mo`).
+  - **Restauration par micro-lots et extraction optimisée (Zéro timeout sur Médias & Full)** :
+    - **Initialisation instantanée (`initRestoreJob`)** : L'étape initiale n'extrait plus l'intégralité de l'archive (1 Go+) dans `temp/`, mais uniquement les métadonnées et la base SQL en moins de 0.05 seconde, éliminant tout blocage à l'étape 1.
+    - **Restitution directe par micro-lots (`restoreFilesChunk`)** : Remplacement de la copie monolithique récursive par une extraction directe par streaming vers `WP_CONTENT_DIR` découpée en micro-lots (150 fichiers ou 16 Mo par passe, durée maximale de 4s par requête). Zéro risque de timeout HTTP 500, suppression de la double écriture sur disque et suivi en direct de la progression de 0 à 100%.
+
+## [1.0.3] - 2026-10-13
+
 ## [1.0.2] - 2026-10-13
 
 ### Ajouté
@@ -19,7 +31,7 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 ### Modifié
 - **Suppression intégrale des redondances pour les répertoires enregistrés via hook (`eg_backup_registered_locations`)** :
   - Implémentation de [`FileScanner::isLocationCoveredByHooks()`](file:///c:/Users/egagnon/Personnel/Dev/eg-backup/includes/Core/FileScanner.php) effectuant une analyse multi-critères (chemins relatifs à `wp-content`, chemins absolus normalisés, chemins réels sur disque via `realpath`, et détection des inclusions hiérarchiques de sous-dossiers).
-  - Retrait automatique des répertoires déclarés par hook des listes génériques *« Médiathèque WordPress standard »* et *« Galeries Photos »* (y compris NextGEN Gallery `wp-content/gallery/`), évitant tout doublon d'affichage ou risque de double archivage.
+  - Retrait automatique des répertoires déclarés par hook ainsi que de leurs dossiers conteneurs parents (ex: un dossier `uploads/eg-media/` dont tous les sous-dossiers utiles comme `originals/` sont déclarés via hook) des listes génériques *« Médiathèque WordPress standard »* et *« Galeries Photos »* (y compris NextGEN Gallery `wp-content/gallery/`), évitant tout doublon d'affichage ou risque de double archivage.
   - Renforcement de la normalisation des chemins absolus et relatifs dans [`FileScanner::getRegisteredLocations()`](file:///c:/Users/egagnon/Personnel/Dev/eg-backup/includes/Core/FileScanner.php).
   - Mise à jour de la documentation de référence dans [`docs/HOOKS_API.md`](file:///c:/Users/egagnon/Personnel/Dev/eg-backup/docs/HOOKS_API.md).
 

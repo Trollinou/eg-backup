@@ -497,7 +497,8 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await wpAjax<{
                 total_files: number;
-                cli_completed: boolean;
+                cli_in_progress?: boolean;
+                cli_completed?: boolean;
                 message: string;
             }>(ajaxUrl, {
                 action: 'eg_backup_prepare_files',
@@ -510,10 +511,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const { total_files: totalFiles, cli_completed: cliCompleted, message } = response.data;
+            const { total_files: totalFiles, cli_in_progress: cliInProgress, cli_completed: cliCompleted, message } = response.data;
             logMessage('info', message);
 
-            // Si le moteur binaire CLI a tout archivé en une seule passe instantanée
+            // 1. Si le processus CLI tourne en arrière-plan (mode asynchrone anti-timeout)
+            if (cliInProgress) {
+                await pollCliZipProgress(jobId, totalFiles);
+                return;
+            }
+
+            // 2. Si le moteur binaire CLI a déjà tout archivé en direct
             if (cliCompleted) {
                 logMessage('success', 'Archivage des fichiers finalisé via le moteur binaire CLI (0 compression CPU).');
                 markStepDone('step-files');
@@ -522,6 +529,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // 3. Fallback PHP ZipArchive ou aucun fichier
             if (totalFiles === 0) {
                 logMessage('info', 'Aucun fichier externe à archiver.');
                 markStepDone('step-files');
@@ -531,8 +539,107 @@ document.addEventListener('DOMContentLoaded', () => {
                 await processFilesChunkStep(jobId, 0, totalFiles);
             }
         } catch (err: any) {
-            handleError(`Erreur réseau lors de l'indexation des fichiers : ${err.message || err}`);
+            // Mécanisme de résilience : si une interruption réseau ou erreur 500 survient,
+            // tenter de vérifier si l'archivage CLI a continué et s'est achevé sur le disque.
+            logMessage('warning', 'Interruption réseau ou délai serveur dépassé (HTTP 500). Vérification de l\'archivage sur le disque...');
+            const recovered = await tryRecoverCliZip(jobId);
+            if (!recovered) {
+                handleError(`Erreur réseau lors de l'indexation des fichiers : ${err.message || err}`);
+            }
         }
+    }
+
+    async function pollCliZipProgress(jobId: string, totalFiles: number): Promise<void> {
+        let lastLoggedSize = '';
+        let pollCount = 0;
+
+        updateProgress(55, 'Archivage ultra-rapide CLI en cours...');
+
+        return new Promise<void>((resolve) => {
+            const timer = setInterval(async () => {
+                pollCount++;
+                try {
+                    const response = await wpAjax<{
+                        finished: boolean;
+                        success: boolean;
+                        size: number;
+                        size_human: string;
+                        message?: string;
+                        error?: string;
+                    }>(ajaxUrl, {
+                        action: 'eg_backup_poll_cli',
+                        nonce,
+                        job_id: jobId,
+                    });
+
+                    if (response.success && response.data) {
+                        const status = response.data;
+
+                        if (status.finished) {
+                            clearInterval(timer);
+                            if (status.success) {
+                                updateProgress(85, `Archivage CLI terminé (${status.size_human})`);
+                                logMessage('success', status.message || `Archivage CLI terminé avec succès (${status.size_human}).`);
+                                markStepDone('step-files');
+                                activateStep('step-manifest');
+                                await processFinalizeStep(jobId);
+                                resolve();
+                            } else {
+                                handleError(status.error || 'Erreur lors de l\'archivage CLI.');
+                                resolve();
+                            }
+                            return;
+                        }
+
+                        // Archivage toujours en cours : mise à jour de la volumétrie sur le disque
+                        if (status.size_human) {
+                            updateProgress(65, `Archivage CLI en cours (${status.size_human} écrits)...`);
+                            if (status.size_human !== lastLoggedSize && pollCount % 3 === 0) {
+                                lastLoggedSize = status.size_human;
+                                logMessage('info', `Progression CLI : ${status.size_human} écrits sur le disque...`);
+                            }
+                        }
+                    }
+                } catch {
+                    // Erreur transitoire de polling réseau, nouvelle tentative au prochain cycle
+                }
+            }, 2000);
+        });
+    }
+
+    async function tryRecoverCliZip(jobId: string): Promise<boolean> {
+        // Tente pendant 3 minutes de vérifier si l'archive sur le disque s'est finalisée avec succès
+        for (let i = 0; i < 90; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            try {
+                const response = await wpAjax<{
+                    finished: boolean;
+                    success: boolean;
+                    size: number;
+                    size_human: string;
+                }>(ajaxUrl, {
+                    action: 'eg_backup_poll_cli',
+                    nonce,
+                    job_id: jobId,
+                });
+
+                if (response.success && response.data) {
+                    if (response.data.finished && response.data.success) {
+                        logMessage('success', `Récupération réussie : Archive ZIP finalisée sur le disque (${response.data.size_human}).`);
+                        markStepDone('step-files');
+                        activateStep('step-manifest');
+                        await processFinalizeStep(jobId);
+                        return true;
+                    }
+                    if (!response.data.finished && response.data.size > 0 && i % 3 === 0) {
+                        logMessage('info', `Archivage en cours sur le serveur : ${response.data.size_human} écrits...`);
+                    }
+                }
+            } catch {
+                // Ignore transient network errors
+            }
+        }
+        return false;
     }
 
     let filesRetryCount = 0;

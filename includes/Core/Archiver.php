@@ -159,6 +159,151 @@ class Archiver {
     }
 
     /**
+     * Extrait les métadonnées et la base de données d'un ZIP pour initialiser la restauration en < 1 seconde.
+     *
+     * @param string $zipPath Chemin absolu du fichier ZIP.
+     * @param string $tempDir Répertoire temporaire de travail du job.
+     * @return array|false Tableau avec 'total_files' et 'num_entries' ou false en cas d'erreur.
+     */
+    public static function initRestoreJob($zipPath, $tempDir) {
+        if (!class_exists('ZipArchive') || !file_exists($zipPath)) {
+            return false;
+        }
+
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath) !== true) {
+            return false;
+        }
+
+        wp_mkdir_p($tempDir);
+
+        $rootEntriesToExtract = [];
+        $totalFiles = 0;
+        $numFiles = $zip->numFiles;
+
+        for ($i = 0; $i < $numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            if ($name === false) continue;
+
+            $lower = strtolower($name);
+            if ($lower === 'manifest.json' || $lower === 'database.sql' || $lower === 'theme_settings.json') {
+                $rootEntriesToExtract[] = $name;
+                continue;
+            }
+
+            if (substr($name, -1) !== '/' && (strpos($name, 'files/') === 0 || strpos($name, 'uploads/') === 0 || strpos($name, 'themes/') === 0 || strpos($name, 'gallery/') === 0)) {
+                $totalFiles++;
+            }
+        }
+
+        if (!empty($rootEntriesToExtract)) {
+            $zip->extractTo($tempDir, $rootEntriesToExtract);
+        }
+
+        $zip->close();
+
+        return [
+            'total_files' => $totalFiles,
+            'num_entries' => $numFiles,
+        ];
+    }
+
+    /**
+     * Extrait un lot de fichiers depuis l'archive ZIP directement vers WP_CONTENT_DIR (anti-timeout et sans double écriture).
+     *
+     * @param string $zipPath Chemin de l'archive ZIP.
+     * @param int $startIndex Index de départ dans le ZIP.
+     * @param int $batchCount Nombre maximum de fichiers par passe.
+     * @param int $maxBytes Volume maximum en octets par passe.
+     * @return array
+     */
+    public static function restoreFilesChunk($zipPath, $startIndex, $batchCount = 150, $maxBytes = 16777216) {
+        if (!class_exists('ZipArchive') || !file_exists($zipPath)) {
+            return ['error' => 'Archive introuvable ou module ZipArchive absent.'];
+        }
+
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath) !== true) {
+            return ['error' => 'Impossible d\'ouvrir l\'archive ZIP pour l\'extraction.'];
+        }
+
+        $contentDir = wp_normalize_path(WP_CONTENT_DIR);
+        $numFiles = $zip->numFiles;
+        $processedFiles = 0;
+        $processedBytes = 0;
+        $currentIndex = $startIndex;
+        $startTime = microtime(true);
+        $maxSeconds = 4.0; // 4 secondes maximum par lot AJAX pour garantir zéro timeout
+
+        while ($currentIndex < $numFiles) {
+            $entryName = $zip->getNameIndex($currentIndex);
+            $currentIndex++;
+
+            if ($entryName === false) {
+                continue;
+            }
+
+            if (substr($entryName, -1) === '/') {
+                continue;
+            }
+
+            $lower = strtolower($entryName);
+            if ($lower === 'manifest.json' || $lower === 'database.sql' || $lower === 'theme_settings.json') {
+                continue;
+            }
+
+            if (strpos($entryName, 'files/') === 0) {
+                $relTarget = substr($entryName, 6);
+            } else {
+                $relTarget = $entryName;
+            }
+
+            $relTarget = ltrim(wp_normalize_path($relTarget), '/');
+            $fullTarget = $contentDir . '/' . $relTarget;
+            $targetDir = dirname($fullTarget);
+
+            if (!is_dir($targetDir)) {
+                wp_mkdir_p($targetDir);
+            }
+
+            $stream = $zip->getStream($entryName);
+            if ($stream) {
+                $outFp = @fopen($fullTarget, 'wb');
+                if ($outFp) {
+                    $copied = stream_copy_to_stream($stream, $outFp);
+                    fclose($outFp);
+                    if ($copied !== false) {
+                        $processedBytes += (int) $copied;
+                    }
+                }
+                fclose($stream);
+                $processedFiles++;
+            }
+
+            if ($processedFiles >= $batchCount || $processedBytes >= $maxBytes || (microtime(true) - $startTime) >= $maxSeconds) {
+                break;
+            }
+        }
+
+        $zip->close();
+
+        $eof = ($currentIndex >= $numFiles);
+        $progress = $numFiles > 0 ? min(100, round(($currentIndex / $numFiles) * 100)) : 100;
+        if ($eof) {
+            $progress = 100;
+        }
+
+        return [
+            'new_offset'      => $currentIndex,
+            'processed_files' => $processedFiles,
+            'processed_bytes' => $processedBytes,
+            'total_entries'   => $numFiles,
+            'eof'             => $eof,
+            'progress'        => $progress,
+        ];
+    }
+
+    /**
      * Extrait une archive ZIP vers un dossier cible.
      *
      * @param string $zipPath Chemin du fichier zip.
@@ -234,7 +379,166 @@ class Archiver {
     }
 
     /**
-     * Archive ultra-rapidement les fichiers via l'utilitaire système zip (0 compression CPU sur médias).
+     * Lance l'archivage CLI de manière asynchrone et non-bloquante (anti-timeout HTTP).
+     *
+     * @param string $tempDir Répertoire temporaire contenant manifest.json et database.sql.
+     * @param string $zipFilePath Chemin final du fichier ZIP.
+     * @param array $selectedFolders Liste des dossiers relatifs à WP_CONTENT_DIR.
+     * @param bool $excludeThumbs Si vrai, ignore les vignettes générées WP et NextGEN.
+     * @param array $extraExcludes Règles d'exclusions supplémentaires (ex: provenant de hooks).
+     * @return bool Vrai si le processus d'arrière-plan a été initié avec succès.
+     */
+    public static function startAsyncCliZip($tempDir, $zipFilePath, array $selectedFolders, $excludeThumbs = false, array $extraExcludes = []) {
+        $contentDir = wp_normalize_path(WP_CONTENT_DIR);
+        $tempFilesSymlink = $tempDir . 'files';
+
+        if (file_exists($tempFilesSymlink) || is_link($tempFilesSymlink)) {
+            @unlink($tempFilesSymlink);
+        }
+
+        // Création du lien symbolique files -> WP_CONTENT_DIR pour préserver la structure.
+        if (!@symlink($contentDir, $tempFilesSymlink)) {
+            return false;
+        }
+
+        // 1. Ajout préalable des fichiers racines (manifest, settings, db éventuelle) en direct
+        $rootFiles = [];
+        if (file_exists($tempDir . 'manifest.json')) $rootFiles[] = 'manifest.json';
+        if (file_exists($tempDir . 'database.sql')) $rootFiles[] = 'database.sql';
+        if (file_exists($tempDir . 'theme_settings.json')) $rootFiles[] = 'theme_settings.json';
+
+        if (!empty($rootFiles)) {
+            $cmdBase = "cd " . escapeshellarg($tempDir) . " && zip -q -0 " . escapeshellarg($zipFilePath) . " " . implode(' ', $rootFiles);
+            @exec($cmdBase, $outBase, $retBase);
+        }
+
+        // 2. Dossiers sélectionnés
+        $targetPaths = [];
+        foreach ($selectedFolders as $relFolder) {
+            $relFolder = ltrim(wp_normalize_path($relFolder), '/');
+            if (file_exists($contentDir . '/' . $relFolder)) {
+                $targetPaths[] = escapeshellarg('files/' . $relFolder);
+            }
+        }
+
+        $doneFile = $tempDir . 'cli_done.flag';
+        $logFile = $tempDir . 'zip_output.log';
+
+        if (file_exists($doneFile)) {
+            @unlink($doneFile);
+        }
+
+        if (empty($targetPaths)) {
+            // Aucun dossier média sélectionné, marquage immédiat comme terminé
+            @unlink($tempFilesSymlink);
+            file_put_contents($doneFile, '0');
+            return true;
+        }
+
+        $excludes = [
+            '"files/*cache/*"',
+            '"files/*wpcache/*"',
+            '"files/*et-cache/*"',
+            '"files/*eg-backup-*"',
+            '"files/*node_modules/*"',
+            '"files/*.git/*"',
+            '"files/*.svn/*"',
+        ];
+
+        if ($excludeThumbs) {
+            $excludes[] = '"*-[0-9]*x[0-9]*.*"';
+            $excludes[] = '"*-scaled.*"';
+            $excludes[] = '"*/thumbs/*"';
+            $excludes[] = '"*thumbs_*"';
+            $excludes[] = '"*/dynamic/*"';
+        }
+
+        foreach ($extraExcludes as $ex) {
+            $excludes[] = escapeshellarg("files/*" . trim($ex, '/') . "*");
+        }
+
+        $excludeClause = '-x ' . implode(' ', $excludes);
+        $cmdFiles = "zip -q -r -0 " . escapeshellarg($zipFilePath) . " " . implode(' ', $targetPaths) . " " . $excludeClause;
+
+        // Lancement en arrière-plan détaché selon l'OS pour éviter le timeout du serveur HTTP
+        if (stripos(PHP_OS, 'WIN') === 0) {
+            $batFile = $tempDir . 'run_zip.bat';
+            $batContent = "@echo off\r\n";
+            $batContent .= "cd /d " . escapeshellarg($tempDir) . "\r\n";
+            $batContent .= $cmdFiles . " > " . escapeshellarg($logFile) . " 2>&1\r\n";
+            $batContent .= "echo %ERRORLEVEL% > " . escapeshellarg($doneFile) . "\r\n";
+            file_put_contents($batFile, $batContent);
+
+            @exec("start /B cmd /c " . escapeshellarg($batFile) . " > NUL 2>&1");
+            return true;
+        } else {
+            $shFile = $tempDir . 'run_zip.sh';
+            $shContent = "#!/bin/sh\n";
+            $shContent .= "cd " . escapeshellarg($tempDir) . "\n";
+            $shContent .= $cmdFiles . " > " . escapeshellarg($logFile) . " 2>&1\n";
+            $shContent .= "echo $? > " . escapeshellarg($doneFile) . "\n";
+            file_put_contents($shFile, $shContent);
+            @chmod($shFile, 0755);
+
+            @exec("/bin/sh " . escapeshellarg($shFile) . " > /dev/null 2>&1 &");
+            return true;
+        }
+    }
+
+    /**
+     * Vérifie l'état d'avancement d'un archivage CLI asynchrone.
+     *
+     * @param string $tempDir Répertoire temporaire de travail.
+     * @param string $zipFilePath Chemin final du fichier ZIP.
+     * @return array
+     */
+    public static function checkCliZipStatus($tempDir, $zipFilePath) {
+        $doneFile = $tempDir . 'cli_done.flag';
+        $tempFilesSymlink = $tempDir . 'files';
+
+        clearstatcache(true, $zipFilePath);
+        $currentSize = file_exists($zipFilePath) ? (int) filesize($zipFilePath) : 0;
+
+        if (file_exists($doneFile)) {
+            $rawStatus = trim((string) @file_get_contents($doneFile));
+            $exitCode = is_numeric($rawStatus) ? (int) $rawStatus : 0;
+
+            if (file_exists($tempFilesSymlink) || is_link($tempFilesSymlink)) {
+                @unlink($tempFilesSymlink);
+            }
+
+            if ($exitCode === 0 && file_exists($zipFilePath) && $currentSize > 0) {
+                return [
+                    'finished'   => true,
+                    'success'    => true,
+                    'size'       => $currentSize,
+                    'size_human' => FileScanner::formatSize($currentSize),
+                    'message'    => sprintf('Archivage ultra-rapide CLI terminé avec succès (%s).', FileScanner::formatSize($currentSize)),
+                ];
+            } else {
+                $logFile = $tempDir . 'zip_output.log';
+                $logContent = file_exists($logFile) ? (string) @file_get_contents($logFile) : '';
+                return [
+                    'finished' => true,
+                    'success'  => false,
+                    'size'     => $currentSize,
+                    'error'    => !empty($logContent) ? substr($logContent, -400) : 'Erreur lors de l\'archivage CLI en arrière-plan.',
+                ];
+            }
+        }
+
+        // Toujours en cours d'écriture sur le disque
+        return [
+            'finished'   => false,
+            'success'    => false,
+            'size'       => $currentSize,
+            'size_human' => FileScanner::formatSize($currentSize),
+            'message'    => sprintf('Archivage en cours : %s écrits sur le disque...', FileScanner::formatSize($currentSize)),
+        ];
+    }
+
+    /**
+     * Archive les fichiers via l'utilitaire système zip (mode synchrone, principalement pour WP-CLI).
      *
      * @param string $tempDir Répertoire temporaire contenant manifest.json et database.sql.
      * @param string $zipFilePath Chemin final du fichier ZIP.
