@@ -44,17 +44,21 @@ eg-backup/
 │   │   └── admin-rtl.css         # CSS RTL généré automatiquement
 │   └── js/
 │       ├── backup.js             # Bundle JS compilé (ne pas modifier directement)
+│       ├── list.js               # Bundle JS compilé (ne pas modifier directement)
 │       └── restore.js            # Bundle JS compilé (ne pas modifier directement)
 ├── src/
 │   ├── scss/
 │   │   └── admin.scss            # Source des styles SCSS
 │   └── ts/
+│       ├── _common.ts            # Helpers partagés (wpAjax, notifications)
 │       ├── backup.ts             # Source TypeScript du scan et sauvegarde
+│       ├── list.ts               # Source TypeScript de la gestion de la liste
 │       ├── restore.ts            # Source TypeScript de l'assistant de restauration
 │       └── globals.d.ts          # Déclarations des types globaux
 ├── docs/
 │   └── HOOKS_API.md              # Documentation de l'API de hooks pour plugins tiers
 ├── AGENTS.md                     # Règles de développement pour les assistants IA
+├── CHANGELOG.md                  # Historique des versions et modifications
 ├── tsconfig.json                 # Configuration TypeScript
 └── README.md
 ```
