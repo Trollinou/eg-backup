@@ -5,6 +5,7 @@
 # Builds et assets générés (selon ton workflow)
 /dist/
 /build/
+/dist-temp/
 
 # Fichiers de configuration / OS / IDE
 .DS_Store
@@ -15,7 +16,10 @@ Thumbs.db
 
 # Fichiers d'environnement
 .env
+.env.*
 .env.local
 
 # Archives et packages
 *.zip
+*.tar.gz
+*.tar

@@ -1,14 +1,39 @@
+# Dépôt & versioning
 /.git/
 /.github/
-/node_modules/
-/src/
-/scripts/
-/dist-temp/
+/.gitignore
+/.gitattributes
+
+# Documentation & configurations de développement
+/AGENTS.md
+/.vscode/
+/.idea/
 /.distignore
 /package.json
 /package-lock.json
 /tsconfig.json
-*.zip
-*.sh
+/composer.json
+/composer.lock
+
+# Sources et scripts de développement
+/src/
+/scripts/
+
+# Dépendances & répertoires temporaires
+/node_modules/
+/dist-temp/
+/dist/
+/build/
+
+# Fichiers système & environnement
 .DS_Store
 Thumbs.db
+*.log
+.env
+.env.*
+
+# Archives et scripts shell
+*.zip
+*.tar.gz
+*.sh
+
