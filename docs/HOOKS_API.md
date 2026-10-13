@@ -76,8 +76,8 @@ add_filter('eg_backup_registered_locations', function (array $locations) {
    - Les répertoires déclarés apparaissent systématiquement sous la catégorie **« Documents & Données déclarées »** avec le badge de votre plugin (ex. `[Gestion de Club]`).
    - Si le dossier existe sur le disque, sa taille totale et son nombre de fichiers sont calculés automatiquement.
    - Si le dossier n'a pas encore été créé sur le disque (ex. nouveau plugin ou aucune donnée enregistrée), il reste affiché avec la mention *(Dossier non créé sur le disque - 0 Ko)* et sa sélection est désactivée afin de confirmer que l'intégration est active tout en protégeant le processus de sauvegarde.
-2. **Filtrage automatique :**
-   - Si votre dossier se trouve à l'intérieur de `wp-content/uploads/`, il est automatiquement dissocié de la médiathèque standard pour éviter les doublons et conserver son identification propre.
+2. **Filtrage automatique et suppression des redondances :**
+   - Si votre dossier se trouve dans `wp-content/uploads/` ou correspond à une galerie/médiathèque (ex: NextGEN `gallery/`, dossiers d'albums FooGallery/Envira), il est **automatiquement exclu des autres listes (Médiathèque standard et Galeries)** afin d'éliminer toute redondance et de préserver son identification propre sous sa catégorie dédiée.
    - Lors de l'archivage, les motifs spécifiés dans la clé `exclude` sont strictement ignorés.
 3. **Traçabilité dans le Manifeste (`manifest.json`) :**
    - L'archive enregistre les métadonnées de l'emplacement dans son manifeste, garantissant une identification parfaite lors de transferts de serveurs.

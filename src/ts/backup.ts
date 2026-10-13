@@ -134,6 +134,56 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function formatBytes(bytes: number): string {
+        if (!bytes || bytes <= 0) return '0 Ko';
+        const units = ['o', 'Ko', 'Mo', 'Go', 'To'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        const size = bytes / Math.pow(1024, i);
+        const formatted = size >= 10 || i === 0 ? Math.round(size) : Math.round(size * 10) / 10;
+        return `${formatted} ${units[i]}`;
+    }
+
+    function updateAllCategorySummaries(): void {
+        if (!fileTreeContainer) return;
+        const excludeThumbs = excludeThumbsCb?.checked ?? true;
+        const catGroups = $$<HTMLElement>('.eg-cat-group', fileTreeContainer);
+
+        catGroups.forEach(group => {
+            const checkedBoxes = $$<HTMLInputElement>('.eg-folder-checkbox:checked', group);
+            let totalBytes = 0;
+            let totalFiles = 0;
+            const selectedCount = checkedBoxes.length;
+
+            checkedBoxes.forEach(cb => {
+                const sizeStr = excludeThumbs
+                    ? (cb.getAttribute('data-size-no-thumbs') || cb.getAttribute('data-size') || '0')
+                    : (cb.getAttribute('data-size') || '0');
+                const filesStr = excludeThumbs
+                    ? (cb.getAttribute('data-files-no-thumbs') || cb.getAttribute('data-files') || '0')
+                    : (cb.getAttribute('data-files') || '0');
+
+                const size = parseInt(sizeStr, 10);
+                const files = parseInt(filesStr, 10);
+
+                totalBytes += isNaN(size) ? 0 : size;
+                totalFiles += isNaN(files) ? 0 : files;
+            });
+
+            const badge = group.querySelector<HTMLElement>('.eg-cat-selection-badge');
+            if (!badge) return;
+
+            if (selectedCount === 0) {
+                badge.className = 'eg-cat-selection-badge eg-cat-empty';
+                badge.innerHTML = '<span class="dashicons dashicons-minus"></span> <span class="eg-cat-badge-text">Sélection : 0 Ko (0 dossier)</span>';
+            } else {
+                const filesLabel = excludeThumbs ? 'originaux' : 'fichiers';
+                const foldersLabel = selectedCount > 1 ? 'dossiers' : 'dossier';
+                badge.className = 'eg-cat-selection-badge eg-cat-active';
+                badge.innerHTML = `<span class="dashicons dashicons-yes-alt"></span> <span class="eg-cat-badge-text">Sélection : <strong>${formatBytes(totalBytes)}</strong> <small>(${selectedCount} ${foldersLabel}, ${totalFiles} ${filesLabel})</small></span>`;
+            }
+        });
+    }
+
     function renderCategorizedHtml(data: { categorized: any; registered_locations: any[]; is_cli_zip: boolean }): void {
         if (!fileTreeContainer) return;
 
@@ -143,20 +193,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 1. Médiathèque WordPress standard
         if (cat.wp_media && cat.wp_media.length > 0) {
-            html += '<div class="eg-cat-group">';
+            html += '<div class="eg-cat-group" data-cat-id="wp_media">';
             html += '<div class="eg-cat-header">';
+            html += '<div class="eg-cat-header-title">';
             html += '<h4><span class="dashicons dashicons-admin-media"></span> 1. Médiathèque WordPress standard (wp-content/uploads/)</h4>';
             html += '<span class="description">Dossiers d\'uploads standards classés par années</span>';
+            html += '</div>';
+            html += '<div class="eg-cat-header-summary">';
+            html += '<span class="eg-cat-selection-badge eg-cat-empty"><span class="dashicons dashicons-minus"></span> <span class="eg-cat-badge-text">Sélection : 0 Ko (0 dossier)</span></span>';
+            html += '</div>';
             html += '</div>';
             html += '<ul class="eg-tree-list" style="padding: 10px 18px;">';
 
             for (const item of cat.wp_media) {
                 const sizeText = excludeThumbs && item.size_no_thumbs_human ? item.size_no_thumbs_human : item.size_human;
                 const countText = excludeThumbs && item.files_no_thumbs !== undefined ? `${item.files_no_thumbs} originaux` : `${item.files_count} fichiers`;
+                const sizeBytes = item.size || 0;
+                const sizeNoThumbs = item.size_no_thumbs !== undefined ? item.size_no_thumbs : sizeBytes;
+                const filesCount = item.files_count || 0;
+                const filesNoThumbs = item.files_no_thumbs !== undefined ? item.files_no_thumbs : filesCount;
 
                 html += '<li class="eg-tree-item">';
                 html += '<label class="eg-tree-label">';
-                html += `<input type="checkbox" name="eg_selected_folders[]" class="eg-folder-checkbox" value="${escapeHtml(item.relative_path)}" data-recommended="${item.is_recommended ? '1' : '0'}" />`;
+                html += `<input type="checkbox" name="eg_selected_folders[]" class="eg-folder-checkbox" value="${escapeHtml(item.relative_path)}" data-recommended="${item.is_recommended ? '1' : '0'}" data-size="${sizeBytes}" data-size-no-thumbs="${sizeNoThumbs}" data-files="${filesCount}" data-files-no-thumbs="${filesNoThumbs}" />`;
                 html += '<span class="dashicons dashicons-category"></span>';
                 html += `<strong>${escapeHtml(item.name)}/</strong> `;
                 html += `<span class="eg-badge-size">${escapeHtml(sizeText)}</span> `;
@@ -169,20 +228,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 2. Photothèques et Galeries tierces (NextGEN Gallery, etc.)
         if (cat.galleries && cat.galleries.length > 0) {
-            html += '<div class="eg-cat-group">';
+            html += '<div class="eg-cat-group" data-cat-id="galleries">';
             html += '<div class="eg-cat-header">';
+            html += '<div class="eg-cat-header-title">';
             html += '<h4><span class="dashicons dashicons-format-gallery"></span> 2. Galeries Photos & Photothèques (NextGEN Gallery, etc.)</h4>';
             html += '<span class="description">Dossiers dédiés de galeries photos</span>';
+            html += '</div>';
+            html += '<div class="eg-cat-header-summary">';
+            html += '<span class="eg-cat-selection-badge eg-cat-empty"><span class="dashicons dashicons-minus"></span> <span class="eg-cat-badge-text">Sélection : 0 Ko (0 dossier)</span></span>';
+            html += '</div>';
             html += '</div>';
             html += '<ul class="eg-tree-list" style="padding: 10px 18px;">';
 
             for (const item of cat.galleries) {
                 const sizeText = excludeThumbs && item.size_no_thumbs_human ? item.size_no_thumbs_human : item.size_human;
                 const countText = excludeThumbs && item.files_no_thumbs !== undefined ? `${item.files_no_thumbs} originaux` : `${item.files_count} fichiers`;
+                const sizeBytes = item.size || 0;
+                const sizeNoThumbs = item.size_no_thumbs !== undefined ? item.size_no_thumbs : sizeBytes;
+                const filesCount = item.files_count || 0;
+                const filesNoThumbs = item.files_no_thumbs !== undefined ? item.files_no_thumbs : filesCount;
 
                 html += '<li class="eg-tree-item">';
                 html += '<label class="eg-tree-label">';
-                html += `<input type="checkbox" name="eg_selected_folders[]" class="eg-folder-checkbox" value="${escapeHtml(item.relative_path)}" data-recommended="1" checked="checked" />`;
+                html += `<input type="checkbox" name="eg_selected_folders[]" class="eg-folder-checkbox" value="${escapeHtml(item.relative_path)}" data-recommended="1" checked="checked" data-size="${sizeBytes}" data-size-no-thumbs="${sizeNoThumbs}" data-files="${filesCount}" data-files-no-thumbs="${filesNoThumbs}" />`;
                 html += '<span class="dashicons dashicons-images-alt"></span>';
                 html += `<strong>${escapeHtml(item.name)}</strong> `;
                 html += `<span class="eg-badge-size">${escapeHtml(sizeText)}</span> `;
@@ -197,10 +265,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // 3. Documents & Emplacements enregistrés via hook (ex: Plugins de Club)
         const regLocs = Object.values(cat.registered_locations || {});
         if (regLocs.length > 0) {
-            html += '<div class="eg-cat-group">';
+            html += '<div class="eg-cat-group" data-cat-id="registered_locations">';
             html += '<div class="eg-cat-header">';
+            html += '<div class="eg-cat-header-title">';
             html += '<h4><span class="dashicons dashicons-media-document"></span> 3. Documents & Données déclarées (Plugins Métier & Extensions)</h4>';
             html += '<span class="description">Déclarés automatiquement via l\'API <code>eg_backup_registered_locations</code></span>';
+            html += '</div>';
+            html += '<div class="eg-cat-header-summary">';
+            html += '<span class="eg-cat-selection-badge eg-cat-empty"><span class="dashicons dashicons-minus"></span> <span class="eg-cat-badge-text">Sélection : 0 Ko (0 dossier)</span></span>';
+            html += '</div>';
             html += '</div>';
             html += '<ul class="eg-tree-list" style="padding: 10px 18px;">';
 
@@ -209,10 +282,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const checked = (exists && loc.recommended) ? 'checked="checked"' : '';
                 const disabledAttr = !exists ? 'disabled="disabled"' : '';
                 const itemClass = !exists ? 'eg-tree-item eg-tree-item-muted' : 'eg-tree-item';
+                const sizeBytes = loc.size || 0;
+                const filesCount = loc.files_count || 0;
 
                 html += `<li class="${itemClass}">`;
                 html += '<label class="eg-tree-label">';
-                html += `<input type="checkbox" name="eg_selected_folders[]" class="eg-folder-checkbox" value="${escapeHtml(loc.relative_path)}" data-recommended="${loc.recommended ? '1' : '0'}" ${checked} ${disabledAttr} />`;
+                html += `<input type="checkbox" name="eg_selected_folders[]" class="eg-folder-checkbox" value="${escapeHtml(loc.relative_path)}" data-recommended="${loc.recommended ? '1' : '0'}" data-size="${sizeBytes}" data-size-no-thumbs="${sizeBytes}" data-files="${filesCount}" data-files-no-thumbs="${filesCount}" ${checked} ${disabledAttr} />`;
                 html += '<span class="dashicons dashicons-portfolio"></span>';
                 html += `<strong>${escapeHtml(loc.label)}</strong> `;
                 html += `<span class="eg-plugin-badge">${escapeHtml(loc.plugin_name)}</span> `;
@@ -235,17 +310,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 4. Optimiseurs et backups secondaires (décochés par défaut)
         if (cat.optimizers && cat.optimizers.length > 0) {
-            html += '<div class="eg-cat-group">';
+            html += '<div class="eg-cat-group" data-cat-id="optimizers">';
             html += '<div class="eg-cat-header">';
+            html += '<div class="eg-cat-header-title">';
             html += '<h4><span class="dashicons dashicons-warning"></span> 4. Caches d\'optimiseurs d\'images (Optionnel)</h4>';
             html += '<span class="description">Sauvegardes de conversion d\'images originales</span>';
+            html += '</div>';
+            html += '<div class="eg-cat-header-summary">';
+            html += '<span class="eg-cat-selection-badge eg-cat-empty"><span class="dashicons dashicons-minus"></span> <span class="eg-cat-badge-text">Sélection : 0 Ko (0 dossier)</span></span>';
+            html += '</div>';
             html += '</div>';
             html += '<ul class="eg-tree-list" style="padding: 10px 18px;">';
 
             for (const item of cat.optimizers) {
+                const sizeBytes = item.size || 0;
+                const filesCount = item.files_count || 0;
+
                 html += '<li class="eg-tree-item">';
                 html += '<label class="eg-tree-label">';
-                html += `<input type="checkbox" name="eg_selected_folders[]" class="eg-folder-checkbox" value="${escapeHtml(item.relative_path)}" data-recommended="0" />`;
+                html += `<input type="checkbox" name="eg_selected_folders[]" class="eg-folder-checkbox" value="${escapeHtml(item.relative_path)}" data-recommended="0" data-size="${sizeBytes}" data-size-no-thumbs="${sizeBytes}" data-files="${filesCount}" data-files-no-thumbs="${filesCount}" />`;
                 html += '<span class="dashicons dashicons-backup"></span>';
                 html += `<strong>${escapeHtml(item.name)}/</strong> `;
                 html += `<span class="eg-badge-size">${escapeHtml(item.size_human)}</span> `;
@@ -261,15 +344,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         fileTreeContainer.innerHTML = html;
+        updateAllCategorySummaries();
     }
+
+    // Écouteur délégué sur les changements de sélection pour recalculer en direct les totaux
+    fileTreeContainer?.addEventListener('change', (e: Event) => {
+        const target = e.target as HTMLElement;
+        if (target && target.classList.contains('eg-folder-checkbox')) {
+            updateAllCategorySummaries();
+        }
+    });
 
     // Actions de sélection rapide
     selectAllBtn?.addEventListener('click', () => {
         $$<HTMLInputElement>('.eg-folder-checkbox:not(:disabled)').forEach(cb => { cb.checked = true; });
+        updateAllCategorySummaries();
     });
 
     deselectAllBtn?.addEventListener('click', () => {
         $$<HTMLInputElement>('.eg-folder-checkbox').forEach(cb => { cb.checked = false; });
+        updateAllCategorySummaries();
     });
 
     selectRecBtn?.addEventListener('click', () => {
@@ -277,6 +371,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const isRec = cb.getAttribute('data-recommended') === '1';
             cb.checked = isRec;
         });
+        updateAllCategorySummaries();
     });
 
     // Lancement de la sauvegarde

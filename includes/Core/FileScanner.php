@@ -51,6 +51,51 @@ class FileScanner {
     }
 
     /**
+     * Détermine si un chemin correspond ou est couvert par un emplacement déclaré via hook.
+     *
+     * @param string $fullPath Chemin absolu du dossier candidat.
+     * @param string $relativePath Chemin relatif du dossier candidat (par rapport à WP_CONTENT_DIR).
+     * @param array $registeredLocations Liste des emplacements enregistrés via hook.
+     * @return bool
+     */
+    public static function isLocationCoveredByHooks($fullPath, $relativePath, array $registeredLocations) {
+        $normFull = strtolower(rtrim(wp_normalize_path($fullPath), '/'));
+        $normRel = strtolower(trim(wp_normalize_path($relativePath), '/'));
+        $realFull = file_exists($fullPath) ? strtolower(rtrim(wp_normalize_path(realpath($fullPath) ?: $fullPath), '/')) : $normFull;
+
+        foreach ($registeredLocations as $loc) {
+            $locRel = !empty($loc['relative_path']) ? strtolower(trim(wp_normalize_path($loc['relative_path']), '/')) : '';
+            $locFull = !empty($loc['full_path']) ? strtolower(rtrim(wp_normalize_path($loc['full_path']), '/')) : '';
+            $locReal = (!empty($loc['full_path']) && file_exists($loc['full_path']))
+                ? strtolower(rtrim(wp_normalize_path(realpath($loc['full_path']) ?: $loc['full_path']), '/'))
+                : $locFull;
+
+            // 1. Égalité stricte (chemin relatif, absolu ou canonique)
+            if (($locRel !== '' && $normRel === $locRel) || ($locFull !== '' && $normFull === $locFull) || ($locReal !== '' && $realFull === $locReal)) {
+                return true;
+            }
+
+            // 2. Le candidat est un sous-dossier de l'emplacement déclaré par hook
+            if ($locRel !== '' && strpos($normRel, $locRel . '/') === 0) {
+                return true;
+            }
+            if ($locFull !== '' && strpos($normFull, $locFull . '/') === 0) {
+                return true;
+            }
+            if ($locReal !== '' && strpos($realFull, $locReal . '/') === 0) {
+                return true;
+            }
+
+            // 3. Déclaration relative sans préfixe "uploads/" (ex: "club-documents" pour "uploads/club-documents")
+            if ($locRel !== '' && 'uploads/' . $locRel === $normRel) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Retourne une analyse catégorisée des données pour une sélection fine.
      *
      * @return array
@@ -61,12 +106,6 @@ class FileScanner {
         $uploadsBase = wp_normalize_path($uploadDir['basedir']);
 
         $registeredLocations = self::getRegisteredLocations();
-        $registeredRelPaths = [];
-        foreach ($registeredLocations as $rLoc) {
-            if (!empty($rLoc['relative_path'])) {
-                $registeredRelPaths[] = strtolower(trim($rLoc['relative_path'], '/'));
-            }
-        }
 
         $categories = [
             'core_themes'          => [],
@@ -90,6 +129,11 @@ class FileScanner {
                     if ($t === '.' || $t === '..') continue;
                     $themePath = $themesDir . '/' . $t;
                     if (is_dir($themePath)) {
+                        $relPath = 'themes/' . $t;
+                        if (self::isLocationCoveredByHooks($themePath, $relPath, $registeredLocations)) {
+                            continue;
+                        }
+
                         $lowerT = strtolower($t);
                         $isActive = ($lowerT === $activeSlug || $lowerT === $parentSlug);
                         $isChild = (strpos($lowerT, '-child') !== false);
@@ -97,7 +141,7 @@ class FileScanner {
 
                         $categories['core_themes'][] = [
                             'name'          => $t,
-                            'relative_path' => 'themes/' . $t,
+                            'relative_path' => $relPath,
                             'full_path'     => $themePath,
                             'is_recommended'=> ($isActive || $isChild),
                             'is_active'     => $isActive,
@@ -125,8 +169,8 @@ class FileScanner {
                     $relPath = ltrim(str_replace($contentDir, '', $fullPath), '/');
                     $lowerU = strtolower($u);
 
-                    // Emplacements déjà déclarés via eg_backup_registered_locations
-                    if (in_array(strtolower(trim($relPath, '/')), $registeredRelPaths, true)) {
+                    // Emplacements déjà déclarés via eg_backup_registered_locations : exclu des autres listes
+                    if (self::isLocationCoveredByHooks($fullPath, $relPath, $registeredLocations)) {
                         continue;
                     }
 
@@ -184,7 +228,7 @@ class FileScanner {
 
         // 3. NextGEN Gallery à la racine de wp-content (wp-content/gallery/)
         $nggDir = $contentDir . '/gallery';
-        if (is_dir($nggDir)) {
+        if (is_dir($nggDir) && !self::isLocationCoveredByHooks($nggDir, 'gallery', $registeredLocations)) {
             $stats = self::getDirectoryStats($nggDir);
             $categories['galleries'][] = [
                 'name'                 => 'NextGEN Gallery (gallery/)',
@@ -233,12 +277,22 @@ class FileScanner {
                 $fullPath = $rawPath;
                 $relativePath = ltrim(substr($rawPath, strlen($contentDir)), '/');
             } elseif ($isAbsolute) {
-                $fullPath = $rawPath;
-                $relativePath = ltrim(basename($rawPath), '/');
+                $realContent = realpath($contentDir);
+                $realRaw = realpath($rawPath);
+                if ($realContent && $realRaw && stripos(wp_normalize_path($realRaw), wp_normalize_path($realContent)) === 0) {
+                    $fullPath = wp_normalize_path($realRaw);
+                    $relativePath = ltrim(substr($fullPath, strlen(wp_normalize_path($realContent))), '/');
+                } else {
+                    $fullPath = $rawPath;
+                    $relativePath = ltrim(basename($rawPath), '/');
+                }
             } else {
                 $fullPath = wp_normalize_path($contentDir . '/' . ltrim($rawPath, '/'));
                 $relativePath = ltrim($rawPath, '/');
             }
+
+            $fullPath = rtrim($fullPath, '/');
+            $relativePath = trim($relativePath, '/');
 
             $exclude = isset($loc['exclude']) && is_array($loc['exclude'])
                 ? array_map('sanitize_text_field', $loc['exclude'])

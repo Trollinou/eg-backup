@@ -8,6 +8,21 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-13
+
+### Ajouté
+- **Cumul et affichage en temps réel de la volumétrie sélectionnée par catégorie** :
+  - Ajout dans le bandeau de chaque groupe de l'inventaire (*Médiathèque*, *Galeries*, *Données déclarées via hook*, *Optimiseurs*) d'un indicateur dynamique calculant la taille totale cumulée et le décompte de fichiers des dossiers cochés au sein de cette liste.
+  - Recalcul réactif instantané sans rechargement lors de la sélection/désélection manuelle, des actions rapides (*Tout cocher*, *Tout décocher*, *Sélection recommandée*) et de la bascule de l'option d'exclusion des miniatures (`data-size-no-thumbs`).
+  - Nouveaux badges d'état SCSS (`.eg-cat-active` émeraude avec volumétrie mise en valeur et `.eg-cat-empty` discret), avec prise en charge responsive et RTL (`admin-rtl.css`).
+
+### Modifié
+- **Suppression intégrale des redondances pour les répertoires enregistrés via hook (`eg_backup_registered_locations`)** :
+  - Implémentation de [`FileScanner::isLocationCoveredByHooks()`](file:///c:/Users/egagnon/Personnel/Dev/eg-backup/includes/Core/FileScanner.php) effectuant une analyse multi-critères (chemins relatifs à `wp-content`, chemins absolus normalisés, chemins réels sur disque via `realpath`, et détection des inclusions hiérarchiques de sous-dossiers).
+  - Retrait automatique des répertoires déclarés par hook des listes génériques *« Médiathèque WordPress standard »* et *« Galeries Photos »* (y compris NextGEN Gallery `wp-content/gallery/`), évitant tout doublon d'affichage ou risque de double archivage.
+  - Renforcement de la normalisation des chemins absolus et relatifs dans [`FileScanner::getRegisteredLocations()`](file:///c:/Users/egagnon/Personnel/Dev/eg-backup/includes/Core/FileScanner.php).
+  - Mise à jour de la documentation de référence dans [`docs/HOOKS_API.md`](file:///c:/Users/egagnon/Personnel/Dev/eg-backup/docs/HOOKS_API.md).
+
 ## [1.0.1] - 2026-10-13
 
 ### Ajouté
