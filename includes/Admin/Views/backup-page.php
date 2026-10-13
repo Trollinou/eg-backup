@@ -15,38 +15,53 @@ if (!defined('ABSPATH')) {
         <div class="eg-backup-types-grid">
             <label class="eg-type-card active" for="eg-type-core">
                 <input type="radio" name="eg_backup_type" id="eg-type-core" value="core" checked />
-                <div class="eg-type-card-content">
-                    <div class="eg-type-icon"><span class="dashicons dashicons-database"></span></div>
+                <div class="eg-type-card-header">
+                    <div class="eg-type-icon eg-type-icon-core">
+                        <span class="dashicons dashicons-database"></span>
+                    </div>
+                    <div class="eg-type-radio-custom" aria-hidden="true"></div>
+                </div>
+                <div class="eg-type-card-body">
                     <h3>Sauvegarde Cœur du Site <span class="eg-badge-rec">Recommandé</span></h3>
                     <p>Base de données intégrale, thèmes actifs/enfants, réglages Customizer et manifeste des extensions.</p>
-                    <div class="eg-type-footer">
-                        <span class="eg-badge-speed"><span class="dashicons dashicons-clock"></span> ~15 secondes</span>
-                        <span class="eg-badge-size-est">< 30 Mo</span>
-                    </div>
+                </div>
+                <div class="eg-type-footer">
+                    <span class="eg-badge-speed"><span class="dashicons dashicons-clock"></span> ~15 secondes</span>
+                    <span class="eg-badge-size-est">&lt; 30 Mo</span>
                 </div>
             </label>
 
             <label class="eg-type-card" for="eg-type-media">
                 <input type="radio" name="eg_backup_type" id="eg-type-media" value="media" />
-                <div class="eg-type-card-content">
-                    <div class="eg-type-icon"><span class="dashicons dashicons-images-alt2"></span></div>
+                <div class="eg-type-card-header">
+                    <div class="eg-type-icon eg-type-icon-media">
+                        <span class="dashicons dashicons-images-alt2"></span>
+                    </div>
+                    <div class="eg-type-radio-custom" aria-hidden="true"></div>
+                </div>
+                <div class="eg-type-card-body">
                     <h3>Médias, Galeries & Documents</h3>
                     <p>Photos, galeries NextGEN, médiathèque WordPress et documents déclarés par vos extensions métier.</p>
-                    <div class="eg-type-footer">
-                        <span class="eg-badge-speed"><span class="dashicons dashicons-performance"></span> Mode Store (0 compression CPU)</span>
-                    </div>
+                </div>
+                <div class="eg-type-footer">
+                    <span class="eg-badge-speed"><span class="dashicons dashicons-performance"></span> Mode Store (0 compression CPU)</span>
                 </div>
             </label>
 
             <label class="eg-type-card" for="eg-type-full">
                 <input type="radio" name="eg_backup_type" id="eg-type-full" value="full" />
-                <div class="eg-type-card-content">
-                    <div class="eg-type-icon"><span class="dashicons dashicons-portfolio"></span></div>
+                <div class="eg-type-card-header">
+                    <div class="eg-type-icon eg-type-icon-full">
+                        <span class="dashicons dashicons-archive"></span>
+                    </div>
+                    <div class="eg-type-radio-custom" aria-hidden="true"></div>
+                </div>
+                <div class="eg-type-card-body">
                     <h3>Sauvegarde Complète (Full)</h3>
                     <p>Combine le Cœur, la base de données intégrale et tous les fichiers médias/documents sélectionnés.</p>
-                    <div class="eg-type-footer">
-                        <span class="eg-badge-info">Archive consolidée</span>
-                    </div>
+                </div>
+                <div class="eg-type-footer">
+                    <span class="eg-badge-info">Archive consolidée</span>
                 </div>
             </label>
         </div>
@@ -104,7 +119,7 @@ if (!defined('ABSPATH')) {
             <div class="eg-steps-indicator" id="eg-steps-indicator">
                 <div class="eg-step" id="step-init"><span class="step-num">1</span> Initialisation</div>
                 <div class="eg-step" id="step-db"><span class="step-num">2</span> Base de données</div>
-                <div class="eg-step" id="step-files"><span class="step-num">3</span> Fichiers</div>
+                <div class="eg-step" id="step-files"><span class="step-num">3</span> Thèmes & Config</div>
                 <div class="eg-step" id="step-manifest"><span class="step-num">4</span> Finalisation</div>
             </div>
 

@@ -101,10 +101,10 @@ class AjaxHandler {
         $selectedFolders = isset($_POST['selected_folders']) ? (array) $_POST['selected_folders'] : [];
         $selectedFolders = array_values(array_unique(array_map('sanitize_text_field', $selectedFolders)));
 
-        // Si sauvegarde Cœur et aucun dossier spécifié, cibler les thèmes actifs/enfants
-        if ($backupType === 'core' && empty($selectedFolders)) {
+        // Pour la sauvegarde Cœur, cibler strictement les thèmes actifs/enfants (aucun dossier média/upload)
+        if ($backupType === 'core') {
             $activeTheme = wp_get_theme();
-            $selectedFolders[] = 'themes/' . $activeTheme->get_stylesheet();
+            $selectedFolders = ['themes/' . $activeTheme->get_stylesheet()];
             if ($activeTheme->parent()) {
                 $selectedFolders[] = 'themes/' . $activeTheme->get_template();
             }
@@ -270,7 +270,11 @@ class AjaxHandler {
 
         // 2b. Export dédié des réglages de thème (pour Cœur et Complet)
         if ($backupType !== 'media') {
-            $this->exportThemeSettings($tempDir . 'theme_settings.json');
+            try {
+                $this->exportThemeSettings($tempDir . 'theme_settings.json');
+            } catch (\Throwable $e) {
+                error_log('EG Backup - Avertissement lors de l\'export des réglages de thème : ' . $e->getMessage());
+            }
         }
 
         // 3. Initialiser le nom de l'archive ZIP
@@ -318,10 +322,14 @@ class AjaxHandler {
         $state['total_files']  = $totalFiles;
         file_put_contents($stateFile, wp_json_encode($state));
 
+        $prepMessage = ($backupType === 'core')
+            ? sprintf('%d fichier(s) de thème répertorié(s) pour l\'archivage.', $totalFiles)
+            : sprintf('%d fichier(s) répertorié(s) pour l\'archivage.', $totalFiles);
+
         wp_send_json_success([
             'total_files'   => $totalFiles,
             'cli_completed' => false,
-            'message'       => sprintf('%d fichier(s) répertorié(s) pour l\'archivage.', $totalFiles),
+            'message'       => $prepMessage,
         ]);
     }
 
@@ -431,12 +439,16 @@ class AjaxHandler {
         $isFinished = ($newOffset >= $totalFiles);
         $progress = $totalFiles > 0 ? round(($newOffset / $totalFiles) * 100) : 100;
 
+        $stepMsg = (($state['backup_type'] ?? '') === 'core')
+            ? sprintf('Archivage des thèmes : %d / %d (%d%%)...', $newOffset, $totalFiles, $progress)
+            : sprintf('Archivage des fichiers : %d / %d (%d%%)...', $newOffset, $totalFiles, $progress);
+
         wp_send_json_success([
             'finished' => $isFinished,
             'offset'   => $newOffset,
             'total'    => $totalFiles,
             'progress' => $progress,
-            'message'  => sprintf('Archivage des fichiers : %d / %d (%d%%)...', $newOffset, $totalFiles, $progress),
+            'message'  => $stepMsg,
         ]);
     }
 
@@ -980,17 +992,23 @@ class AjaxHandler {
             'options'    => [],
         ];
 
+        $likeStylesheet = $wpdb->esc_like('theme_mods_' . $stylesheet) . '%';
+        $likeTemplate   = $wpdb->esc_like('theme_mods_' . $template) . '%';
+
         // Collecter les options associées aux thèmes populaires (Blocksy, Astra, etc.).
         $rows = $wpdb->get_results(
             $wpdb->prepare(
                 "SELECT option_name FROM {$wpdb->options} 
                  WHERE option_name LIKE %s 
                     OR option_name LIKE %s 
-                    OR option_name LIKE 'blocksy_%' 
-                    OR option_name LIKE 'astra_%' 
-                    OR option_name LIKE 'kadence_%'",
-                'theme_mods_' . $stylesheet,
-                'theme_mods_' . $template
+                    OR option_name LIKE %s 
+                    OR option_name LIKE %s 
+                    OR option_name LIKE %s",
+                $likeStylesheet,
+                $likeTemplate,
+                'blocksy_%',
+                'astra_%',
+                'kadence_%'
             ),
             ARRAY_A
         );

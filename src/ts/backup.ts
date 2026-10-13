@@ -53,7 +53,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    const stepFilesEl = $<HTMLElement>('#step-files');
+
     function updateTypeDisplay(type: string): void {
+        if (stepFilesEl) {
+            const numSpan = stepFilesEl.querySelector('.step-num');
+            const numPrefix = numSpan ? numSpan.outerHTML + ' ' : '<span class="step-num">3</span> ';
+            if (type === 'core') {
+                stepFilesEl.innerHTML = `${numPrefix}Thèmes & Config`;
+            } else if (type === 'media') {
+                stepFilesEl.innerHTML = `${numPrefix}Médias & Docs`;
+            } else {
+                stepFilesEl.innerHTML = `${numPrefix}Fichiers & Médias`;
+            }
+        }
+
         if (!actionDescription) return;
 
         if (type === 'core') {
@@ -73,6 +87,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     }
+
+    // Initialisation de l'affichage selon le type par défaut
+    updateTypeDisplay(currentBackupType);
 
     // Clic sur "Actualiser l'inventaire"
     scanBtn?.addEventListener('click', () => {
@@ -256,8 +273,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Lancement de la sauvegarde
     startBackupBtn?.addEventListener('click', async () => {
-        const selectedFolders: string[] = $$<HTMLInputElement>('.eg-folder-checkbox:checked')
-            .map(cb => cb.value);
+        // Pour la sauvegarde Cœur, ne sélectionner aucun dossier média
+        const selectedFolders: string[] = currentBackupType === 'core'
+            ? []
+            : $$<HTMLInputElement>('.eg-folder-checkbox:checked').map(cb => cb.value);
 
         const excludeThumbs = excludeThumbsCb?.checked ? 1 : 0;
 
@@ -365,8 +384,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function prepareFilesStep(jobId: string, selectedFolders: string[]): Promise<void> {
-        updateProgress(52, 'Inventaire et archivage des fichiers...');
-        logMessage('info', 'Analyse et indexation des données à sauvegarder...');
+        const isCore = currentBackupType === 'core';
+        const progressLabel = isCore ? 'Archivage des thèmes actifs et de la configuration...' : 'Inventaire et archivage des fichiers...';
+        const logLabel = isCore ? 'Analyse et indexation des thèmes actifs et de la configuration...' : 'Analyse et indexation des données à sauvegarder...';
+
+        updateProgress(52, progressLabel);
+        logMessage('info', logLabel);
 
         try {
             const response = await wpAjax<{

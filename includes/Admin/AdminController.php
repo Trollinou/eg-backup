@@ -75,13 +75,17 @@ class AdminController {
      * Enregistre l'ensemble des styles et scripts du plugin (séparation stricte Register vs Enqueue).
      */
     private function registerAssets(): void {
+        $cssFile = EG_BACKUP_PLUGIN_DIR . 'assets/css/admin.css';
+        $cssVer  = file_exists($cssFile) ? EG_BACKUP_VERSION . '.' . (string) filemtime($cssFile) : EG_BACKUP_VERSION;
+
         // Enregistrement des feuilles de style d'administration
         wp_register_style(
             'eg-backup-admin',
             EG_BACKUP_PLUGIN_URL . 'assets/css/admin.css',
-            [],
-            EG_BACKUP_VERSION
+            ['dashicons'],
+            $cssVer
         );
+        wp_style_add_data('eg-backup-admin', 'rtl', 'replace');
 
         // Stratégie moderne de chargement asynchrone / différé (WordPress 6.3+)
         $scriptArgs = [
@@ -89,30 +93,39 @@ class AdminController {
             'in_footer' => true,
         ];
 
+        $backupJsFile = EG_BACKUP_PLUGIN_DIR . 'assets/js/backup.js';
+        $backupJsVer  = file_exists($backupJsFile) ? EG_BACKUP_VERSION . '.' . (string) filemtime($backupJsFile) : EG_BACKUP_VERSION;
+
         // 1. Script du module de création de sauvegarde (Scan d'arborescence, dump BDD par lots, ZIP)
         wp_register_script(
             'eg-backup-create',
             EG_BACKUP_PLUGIN_URL . 'assets/js/backup.js',
             [],
-            EG_BACKUP_VERSION,
+            $backupJsVer,
             $scriptArgs
         );
+
+        $listJsFile = EG_BACKUP_PLUGIN_DIR . 'assets/js/list.js';
+        $listJsVer  = file_exists($listJsFile) ? EG_BACKUP_VERSION . '.' . (string) filemtime($listJsFile) : EG_BACKUP_VERSION;
 
         // 2. Script léger du module de gestion de la liste des archives (Suppression AJAX réactive)
         wp_register_script(
             'eg-backup-list',
             EG_BACKUP_PLUGIN_URL . 'assets/js/list.js',
             [],
-            EG_BACKUP_VERSION,
+            $listJsVer,
             $scriptArgs
         );
+
+        $restoreJsFile = EG_BACKUP_PLUGIN_DIR . 'assets/js/restore.js';
+        $restoreJsVer  = file_exists($restoreJsFile) ? EG_BACKUP_VERSION . '.' . (string) filemtime($restoreJsFile) : EG_BACKUP_VERSION;
 
         // 3. Script du module de restauration (Inspection du manifeste, BDD, réécriture URLs)
         wp_register_script(
             'eg-backup-restore',
             EG_BACKUP_PLUGIN_URL . 'assets/js/restore.js',
             [],
-            EG_BACKUP_VERSION,
+            $restoreJsVer,
             $scriptArgs
         );
     }
