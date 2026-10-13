@@ -458,7 +458,8 @@ class Archiver {
         }
 
         $excludeClause = '-x ' . implode(' ', $excludes);
-        $cmdFiles = "zip -q -r -0 " . escapeshellarg($zipFilePath) . " " . implode(' ', $targetPaths) . " " . $excludeClause;
+        // Exécution sans -q pour consigner chaque fichier ajouté dans zip_output.log et suivre la progression
+        $cmdFiles = "zip -r -0 " . escapeshellarg($zipFilePath) . " " . implode(' ', $targetPaths) . " " . $excludeClause;
 
         // Lancement en arrière-plan détaché selon l'OS pour éviter le timeout du serveur HTTP
         if (stripos(PHP_OS, 'WIN') === 0) {
@@ -486,7 +487,7 @@ class Archiver {
     }
 
     /**
-     * Vérifie l'état d'avancement d'un archivage CLI asynchrone.
+     * Vérifie l'état d'avancement d'un archivage CLI asynchrone (fichiers traités et taille en direct).
      *
      * @param string $tempDir Répertoire temporaire de travail.
      * @param string $zipFilePath Chemin final du fichier ZIP.
@@ -494,10 +495,65 @@ class Archiver {
      */
     public static function checkCliZipStatus($tempDir, $zipFilePath) {
         $doneFile = $tempDir . 'cli_done.flag';
+        $logFile = $tempDir . 'zip_output.log';
         $tempFilesSymlink = $tempDir . 'files';
 
-        clearstatcache(true, $zipFilePath);
-        $currentSize = file_exists($zipFilePath) ? (int) filesize($zipFilePath) : 0;
+        // 1. Détection de la volumétrie réelle écrite sur le disque (y compris fichier temporaire zi* d'Info-ZIP)
+        $storageDir = dirname($zipFilePath);
+        $tempCandidates = array_merge(
+            glob($storageDir . '/zi*') ?: [],
+            glob($tempDir . 'zi*') ?: []
+        );
+        $currentSize = 0;
+        foreach ($tempCandidates as $tf) {
+            if (is_file($tf)) {
+                clearstatcache(true, $tf);
+                $sz = (int) filesize($tf);
+                if ($sz > $currentSize) {
+                    $currentSize = $sz;
+                }
+            }
+        }
+        if ($currentSize === 0 && file_exists($zipFilePath)) {
+            clearstatcache(true, $zipFilePath);
+            $currentSize = (int) filesize($zipFilePath);
+        }
+
+        // 2. Décompte des fichiers traités et dernier fichier ajouté depuis zip_output.log
+        $processedFiles = 0;
+        $lastFile = '';
+        if (file_exists($logFile)) {
+            clearstatcache(true, $logFile);
+            $logSize = (int) filesize($logFile);
+            if ($logSize > 0) {
+                $fp = @fopen($logFile, 'rb');
+                if ($fp) {
+                    while (!feof($fp)) {
+                        $buf = fread($fp, 65536);
+                        if ($buf !== false) {
+                            $processedFiles += substr_count($buf, "\n");
+                        }
+                    }
+
+                    // Récupérer le nom du dernier fichier ajouté depuis la fin du log
+                    $readTail = min(2048, $logSize);
+                    fseek($fp, -$readTail, SEEK_END);
+                    $tail = fread($fp, $readTail);
+                    fclose($fp);
+
+                    if ($tail !== false) {
+                        $lines = explode("\n", trim($tail));
+                        for ($li = count($lines) - 1; $li >= 0; $li--) {
+                            $line = trim($lines[$li]);
+                            if (preg_match('/adding:\s+(.+?)\s+\(/i', $line, $m)) {
+                                $lastFile = basename($m[1]);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         if (file_exists($doneFile)) {
             $rawStatus = trim((string) @file_get_contents($doneFile));
@@ -507,33 +563,41 @@ class Archiver {
                 @unlink($tempFilesSymlink);
             }
 
-            if ($exitCode === 0 && file_exists($zipFilePath) && $currentSize > 0) {
+            clearstatcache(true, $zipFilePath);
+            $finalSize = file_exists($zipFilePath) ? (int) filesize($zipFilePath) : $currentSize;
+
+            if ($exitCode === 0 && file_exists($zipFilePath) && $finalSize > 0) {
                 return [
-                    'finished'   => true,
-                    'success'    => true,
-                    'size'       => $currentSize,
-                    'size_human' => FileScanner::formatSize($currentSize),
-                    'message'    => sprintf('Archivage ultra-rapide CLI terminé avec succès (%s).', FileScanner::formatSize($currentSize)),
+                    'finished'        => true,
+                    'success'         => true,
+                    'size'            => $finalSize,
+                    'size_human'      => FileScanner::formatSize($finalSize),
+                    'processed_files' => $processedFiles,
+                    'message'         => sprintf('Archivage ultra-rapide CLI terminé avec succès (%s).', FileScanner::formatSize($finalSize)),
                 ];
             } else {
-                $logFile = $tempDir . 'zip_output.log';
                 $logContent = file_exists($logFile) ? (string) @file_get_contents($logFile) : '';
                 return [
-                    'finished' => true,
-                    'success'  => false,
-                    'size'     => $currentSize,
-                    'error'    => !empty($logContent) ? substr($logContent, -400) : 'Erreur lors de l\'archivage CLI en arrière-plan.',
+                    'finished'        => true,
+                    'success'         => false,
+                    'size'            => $finalSize,
+                    'processed_files' => $processedFiles,
+                    'error'           => !empty($logContent) ? substr($logContent, -400) : 'Erreur lors de l\'archivage CLI en arrière-plan.',
                 ];
             }
         }
 
-        // Toujours en cours d'écriture sur le disque
+        // Toujours en cours d'écriture
         return [
-            'finished'   => false,
-            'success'    => false,
-            'size'       => $currentSize,
-            'size_human' => FileScanner::formatSize($currentSize),
-            'message'    => sprintf('Archivage en cours : %s écrits sur le disque...', FileScanner::formatSize($currentSize)),
+            'finished'        => false,
+            'success'         => false,
+            'size'            => $currentSize,
+            'size_human'      => FileScanner::formatSize($currentSize),
+            'processed_files' => $processedFiles,
+            'last_file'       => $lastFile,
+            'message'         => $processedFiles > 0
+                ? sprintf('Archivage en cours : %d fichiers (%s)...', $processedFiles, FileScanner::formatSize($currentSize))
+                : sprintf('Archivage en cours : %s écrits sur le disque...', FileScanner::formatSize($currentSize)),
         ];
     }
 

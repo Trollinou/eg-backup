@@ -550,6 +550,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function pollCliZipProgress(jobId: string, totalFiles: number): Promise<void> {
+        let lastLoggedCount = -1;
         let lastLoggedSize = '';
         let pollCount = 0;
 
@@ -564,6 +565,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         success: boolean;
                         size: number;
                         size_human: string;
+                        processed_files?: number;
+                        last_file?: string;
                         message?: string;
                         error?: string;
                     }>(ajaxUrl, {
@@ -591,12 +594,39 @@ document.addEventListener('DOMContentLoaded', () => {
                             return;
                         }
 
-                        // Archivage toujours en cours : mise à jour de la volumétrie sur le disque
-                        if (status.size_human) {
-                            updateProgress(65, `Archivage CLI en cours (${status.size_human} écrits)...`);
-                            if (status.size_human !== lastLoggedSize && pollCount % 3 === 0) {
-                                lastLoggedSize = status.size_human;
-                                logMessage('info', `Progression CLI : ${status.size_human} écrits sur le disque...`);
+                        // Archivage toujours en cours : mise à jour continue de la progression
+                        const processed = status.processed_files ?? 0;
+                        const sizeHuman = status.size_human || '0 Ko';
+
+                        // Calcul dynamique du pourcentage entre 55% et 85%
+                        let currentPct = 55;
+                        if (totalFiles > 0 && processed > 0) {
+                            const ratio = Math.min(1, processed / totalFiles);
+                            currentPct = Math.round(55 + (ratio * 30));
+                        }
+
+                        let statusLabel = `Archivage CLI en cours (${sizeHuman} écrits)...`;
+                        if (totalFiles > 0 && processed > 0) {
+                            statusLabel = `Archivage CLI : ${processed} / ${totalFiles} fichiers (${sizeHuman})...`;
+                        } else if (processed > 0) {
+                            statusLabel = `Archivage CLI : ${processed} fichiers (${sizeHuman})...`;
+                        }
+
+                        updateProgress(currentPct, statusLabel);
+
+                        // Journalisation dans la console : dès que de nouveaux fichiers sont ajoutés ou toutes les 6s
+                        const hasNewFiles = processed > 0 && processed !== lastLoggedCount && (Math.abs(processed - lastLoggedCount) >= 100 || lastLoggedCount === -1);
+                        const hasPeriodicUpdate = pollCount % 3 === 0 && (sizeHuman !== lastLoggedSize || processed !== lastLoggedCount);
+
+                        if (hasNewFiles || hasPeriodicUpdate) {
+                            lastLoggedCount = processed;
+                            lastLoggedSize = sizeHuman;
+                            const fileInfo = status.last_file ? ` [${status.last_file}]` : '';
+
+                            if (totalFiles > 0 && processed > 0) {
+                                logMessage('info', `Progression CLI : ${processed} / ${totalFiles} fichiers (${sizeHuman})${fileInfo}`);
+                            } else {
+                                logMessage('info', `Progression CLI : ${sizeHuman} écrits sur le disque...${fileInfo}`);
                             }
                         }
                     }
@@ -617,6 +647,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     success: boolean;
                     size: number;
                     size_human: string;
+                    processed_files?: number;
                 }>(ajaxUrl, {
                     action: 'eg_backup_poll_cli',
                     nonce,
@@ -631,8 +662,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         await processFinalizeStep(jobId);
                         return true;
                     }
-                    if (!response.data.finished && response.data.size > 0 && i % 3 === 0) {
-                        logMessage('info', `Archivage en cours sur le serveur : ${response.data.size_human} écrits...`);
+                    if (!response.data.finished && (response.data.size > 0 || (response.data.processed_files ?? 0) > 0) && i % 3 === 0) {
+                        const fileCount = response.data.processed_files ? `${response.data.processed_files} fichiers - ` : '';
+                        logMessage('info', `Archivage en cours sur le serveur : ${fileCount}${response.data.size_human} écrits...`);
                     }
                 }
             } catch {

@@ -8,12 +8,17 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-10-13
+
 ## [1.0.4] - 2026-10-13
 
 ### Ajouté
 - **Archivage CLI asynchrone non-bloquant & Surveillance en direct (Anti-Timeout HTTP 500)** :
   - **Exécution détachée en arrière-plan** : Découplage de la commande système `zip` via [`Archiver::startAsyncCliZip()`](file:///c:/Users/egagnon/Personnel/Dev/eg-backup/includes/Core/Archiver.php). La requête AJAX HTTP initiale répond immédiatement (< 0.5s), éliminant définitivement les erreurs HTTP 500 / 504 provoquées par les timeouts stricts de 60s des serveurs web (FastCGI / Nginx / Apache).
-  - **Surveillance active (Polling auto-refresh)** : Nouvel endpoint AJAX [`eg_backup_poll_cli`](file:///c:/Users/egagnon/Personnel/Dev/eg-backup/includes/Ajax/AjaxHandler.php) et boucle JavaScript réactive sondant l'état toutes les 2 secondes avec indication en temps réel de la volumétrie écrite sur le disque (ex: `120 Mo`, `500 Mo`, `971 Mo`).
+  - **Surveillance active (Polling auto-refresh & Détection des fichiers temporaires `zi*`)** :
+    - Nouvel endpoint AJAX [`eg_backup_poll_cli`](file:///c:/Users/egagnon/Personnel/Dev/eg-backup/includes/Ajax/AjaxHandler.php) et boucle JavaScript réactive sondant l'état toutes les 2 secondes.
+    - Détection de la taille réelle pendant l'écriture Info-ZIP via la recherche des fichiers de travail temporaires (`zi*`), évitant que la taille affichée ne reste bloquée à la taille de l'archive BDD initiale jusqu'au `close()`.
+    - Suivi et affichage en temps réel du décompte des fichiers traités (`X / Y fichiers`), du pourcentage fluide et du nom du fichier en cours d'archivage dans la console et la barre de statut.
   - **Restauration par micro-lots et extraction optimisée (Zéro timeout sur Médias & Full)** :
     - **Initialisation instantanée (`initRestoreJob`)** : L'étape initiale n'extrait plus l'intégralité de l'archive (1 Go+) dans `temp/`, mais uniquement les métadonnées et la base SQL en moins de 0.05 seconde, éliminant tout blocage à l'étape 1.
     - **Restitution directe par micro-lots (`restoreFilesChunk`)** : Remplacement de la copie monolithique récursive par une extraction directe par streaming vers `WP_CONTENT_DIR` découpée en micro-lots (150 fichiers ou 16 Mo par passe, durée maximale de 4s par requête). Zéro risque de timeout HTTP 500, suppression de la double écriture sur disque et suivi en direct de la progression de 0 à 100%.
