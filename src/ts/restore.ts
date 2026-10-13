@@ -121,7 +121,8 @@ document.addEventListener('DOMContentLoaded', () => {
         let metaHtml = '';
         metaHtml += `<div class="eg-meta-item"><strong>Fichier</strong><span>${escapeHtml(inspectedBackupFilename)}</span></div>`;
         metaHtml += `<div class="eg-meta-item"><strong>Type d'archive</strong><span>${escapeHtml(backupType.toUpperCase())}</span></div>`;
-        metaHtml += `<div class="eg-meta-item"><strong>Date de création</strong><span>${escapeHtml(inspectedManifest.created_at)}</span></div>`;
+        const createdAtDisplay = inspectedManifest.created_at_formatted || inspectedManifest.created_at;
+        metaHtml += `<div class="eg-meta-item"><strong>Date de création</strong><span>${escapeHtml(createdAtDisplay)}</span></div>`;
         metaHtml += `<div class="eg-meta-item"><strong>Version WP source</strong><span>WP ${escapeHtml(inspectedManifest.environment?.version || 'N/A')}</span></div>`;
         if (manifestMetaGrid) manifestMetaGrid.innerHTML = metaHtml;
 

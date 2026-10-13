@@ -8,6 +8,12 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 
 ## [Unreleased]
 
+### Corrigé
+- **Gestion des fuseaux horaires et horodatage local** :
+  - Remplacement de `gmdate()` par `wp_date()` pour la génération des noms d'archives et des identifiants de tâches AJAX/CLI, assurant la prise en compte du décalage horaire configuré dans WordPress.
+  - Correction de l'affichage de la colonne *Date de création* dans la liste des sauvegardes via `wp_date()`, résolvant le décalage UTC constaté avec `date_i18n()` sur les timestamps UNIX bruts.
+  - Enrichissement du manifeste (`manifest.json`) avec `created_at_formatted` et `timezone`, et mise à jour de l'écran d'inspection de restauration.
+
 ## [1.0.0] - 2026-10-13
 
 ### Ajouté

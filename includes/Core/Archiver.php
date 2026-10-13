@@ -93,16 +93,27 @@ class Archiver {
             $manifest = self::extractFileContentFromZip($file, 'manifest.json');
             $manifestData = $manifest ? json_decode($manifest, true) : null;
 
+            $timestamp = !empty($manifestData['timestamp']) ? (int) $manifestData['timestamp'] : $mtime;
+            $dateFormat = get_option('date_format') . ' ' . get_option('time_format');
+            $formattedDate = function_exists('wp_date')
+                ? wp_date($dateFormat, $timestamp)
+                : date_i18n($dateFormat, $timestamp + (int) (get_option('gmt_offset') * HOUR_IN_SECONDS));
+
             $backups[] = [
                 'filename'    => $filename,
                 'path'        => $file,
                 'size'        => $size,
                 'size_human'  => FileScanner::formatSize($size),
-                'date'        => date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $mtime),
-                'timestamp'   => $mtime,
+                'date'        => $formattedDate,
+                'timestamp'   => $timestamp,
                 'manifest'    => $manifestData,
             ];
         }
+
+        // Trier par timestamp décroissant (les plus récents d'abord)
+        usort($backups, function($a, $b) {
+            return ($b['timestamp'] ?? 0) - ($a['timestamp'] ?? 0);
+        });
 
         return $backups;
     }

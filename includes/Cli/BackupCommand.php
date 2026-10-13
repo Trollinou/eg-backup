@@ -102,7 +102,7 @@ class BackupCommand {
 
         $selectedFolders = array_values(array_unique($selectedFolders));
 
-        $jobId = 'cli_' . gmdate('Ymd_His');
+        $jobId = 'cli_' . wp_date('Ymd_His');
         $tempDir = Archiver::getTempDir() . $jobId . '/';
         wp_mkdir_p($tempDir);
 
@@ -142,7 +142,7 @@ class BackupCommand {
         ManifestManager::saveToFile($tempDir . 'manifest.json', $manifest);
 
         $prefix = ($type === 'core') ? 'backup_core_' : (($type === 'media') ? 'backup_media_' : 'backup_full_');
-        $zipFilename = $prefix . gmdate('Y-m-d_H-i-s') . '_cli.zip';
+        $zipFilename = $prefix . wp_date('Y-m-d_H-i-s') . '_cli.zip';
         $zipFilePath = Archiver::getStorageDir() . $zipFilename;
 
         \WP_CLI::line("Création de l'archive ZIP...");
@@ -236,7 +236,7 @@ class BackupCommand {
 
         \WP_CLI::line("=== Informations du site source ===");
         \WP_CLI::line("Site : " . ($manifest['site']['name'] ?? 'Inconnu'));
-        \WP_CLI::line("Date : " . $manifest['created_at']);
+        \WP_CLI::line("Date : " . ($manifest['created_at_formatted'] ?? $manifest['created_at']));
         \WP_CLI::line("URL source : " . ($manifest['environment']['siteurl'] ?? ''));
         \WP_CLI::line("Version WP : " . ($manifest['environment']['version'] ?? ''));
 
@@ -279,7 +279,7 @@ class BackupCommand {
             MaintenanceMode::enable();
         }
 
-        $jobId = 'cli_restore_' . gmdate('Ymd_His');
+        $jobId = 'cli_restore_' . wp_date('Ymd_His');
         $tempDir = Archiver::getTempDir() . $jobId . '/';
         wp_mkdir_p($tempDir);
 

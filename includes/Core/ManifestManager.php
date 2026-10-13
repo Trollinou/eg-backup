@@ -97,7 +97,9 @@ class ManifestManager {
             'generator'            => 'EG Backup & Restore',
             'plugin_version'       => defined('EG_BACKUP_VERSION') ? EG_BACKUP_VERSION : '1.0.0',
             'backup_type'          => $backupType, // 'core', 'media', 'full'
-            'created_at'           => current_time('mysql'),
+            'created_at'           => function_exists('wp_date') ? wp_date('Y-m-d H:i:s') : current_time('mysql'),
+            'created_at_formatted' => function_exists('wp_date') ? wp_date(get_option('date_format') . ' ' . get_option('time_format')) : current_time('mysql'),
+            'timezone'             => function_exists('wp_timezone_string') ? wp_timezone_string() : get_option('timezone_string'),
             'timestamp'            => time(),
             'site'                 => [
                 'name'        => get_bloginfo('name'),

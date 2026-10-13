@@ -111,7 +111,7 @@ class AjaxHandler {
             $selectedFolders = array_values(array_unique($selectedFolders));
         }
 
-        $jobId = 'job_' . gmdate('Ymd_His') . '_' . wp_generate_password(6, false);
+        $jobId = 'job_' . wp_date('Ymd_His') . '_' . wp_generate_password(6, false);
         $tempDir = Archiver::getTempDir() . $jobId . '/';
         wp_mkdir_p($tempDir);
 
@@ -279,7 +279,7 @@ class AjaxHandler {
 
         // 3. Initialiser le nom de l'archive ZIP
         $prefix = ($backupType === 'core') ? 'backup_core_' : (($backupType === 'media') ? 'backup_media_' : 'backup_full_');
-        $zipFilename = $prefix . gmdate('Y-m-d_H-i-s') . '_' . sanitize_title(get_bloginfo('name')) . '.zip';
+        $zipFilename = $prefix . wp_date('Y-m-d_H-i-s') . '_' . sanitize_title(get_bloginfo('name')) . '.zip';
         $zipFilePath = Archiver::getStorageDir() . $zipFilename;
 
         // Tenter l'archivage CLI ultra-rapide si disponible
@@ -603,7 +603,7 @@ class AjaxHandler {
             wp_send_json_error(['message' => 'Archive introuvable.']);
         }
 
-        $jobId = 'restore_' . gmdate('Ymd_His') . '_' . wp_generate_password(6, false);
+        $jobId = 'restore_' . wp_date('Ymd_His') . '_' . wp_generate_password(6, false);
         $tempDir = Archiver::getTempDir() . $jobId . '/';
         wp_mkdir_p($tempDir);
 
