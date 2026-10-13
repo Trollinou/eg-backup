@@ -60,11 +60,19 @@ class FileScanner {
         $uploadDir = wp_upload_dir();
         $uploadsBase = wp_normalize_path($uploadDir['basedir']);
 
+        $registeredLocations = self::getRegisteredLocations();
+        $registeredRelPaths = [];
+        foreach ($registeredLocations as $rLoc) {
+            if (!empty($rLoc['relative_path'])) {
+                $registeredRelPaths[] = strtolower(trim($rLoc['relative_path'], '/'));
+            }
+        }
+
         $categories = [
             'core_themes'          => [],
             'wp_media'             => [],
             'galleries'            => [],
-            'registered_locations' => self::getRegisteredLocations(),
+            'registered_locations' => $registeredLocations,
             'optimizers'           => [],
             'other'                => [],
         ];
@@ -116,6 +124,11 @@ class FileScanner {
 
                     $relPath = ltrim(str_replace($contentDir, '', $fullPath), '/');
                     $lowerU = strtolower($u);
+
+                    // Emplacements déjà déclarés via eg_backup_registered_locations
+                    if (in_array(strtolower(trim($relPath, '/')), $registeredRelPaths, true)) {
+                        continue;
+                    }
 
                     // Optimiseurs
                     if (in_array($lowerU, self::$optimizerDirectories, true)) {
@@ -214,12 +227,16 @@ class FileScanner {
             $label = sanitize_text_field($loc['label'] ?? $id);
             $pluginName = sanitize_text_field($loc['plugin_name'] ?? 'Extension');
             $rawPath = wp_normalize_path($loc['path']);
+            $isAbsolute = (bool) preg_match('#^([a-zA-Z]:|/|\\\\)#', $rawPath);
 
-            if (strpos($rawPath, $contentDir) === 0) {
+            if (stripos($rawPath, $contentDir) === 0) {
                 $fullPath = $rawPath;
                 $relativePath = ltrim(substr($rawPath, strlen($contentDir)), '/');
+            } elseif ($isAbsolute) {
+                $fullPath = $rawPath;
+                $relativePath = ltrim(basename($rawPath), '/');
             } else {
-                $fullPath = wp_normalize_path(WP_CONTENT_DIR . '/' . ltrim($rawPath, '/'));
+                $fullPath = wp_normalize_path($contentDir . '/' . ltrim($rawPath, '/'));
                 $relativePath = ltrim($rawPath, '/');
             }
 

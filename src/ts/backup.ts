@@ -205,17 +205,25 @@ document.addEventListener('DOMContentLoaded', () => {
             html += '<ul class="eg-tree-list" style="padding: 10px 18px;">';
 
             for (const loc of regLocs as any[]) {
-                if (!loc.exists) continue;
-                const checked = loc.recommended ? 'checked="checked"' : '';
+                const exists = Boolean(loc.exists);
+                const checked = (exists && loc.recommended) ? 'checked="checked"' : '';
+                const disabledAttr = !exists ? 'disabled="disabled"' : '';
+                const itemClass = !exists ? 'eg-tree-item eg-tree-item-muted' : 'eg-tree-item';
 
-                html += '<li class="eg-tree-item">';
+                html += `<li class="${itemClass}">`;
                 html += '<label class="eg-tree-label">';
-                html += `<input type="checkbox" name="eg_selected_folders[]" class="eg-folder-checkbox" value="${escapeHtml(loc.relative_path)}" data-recommended="${loc.recommended ? '1' : '0'}" ${checked} />`;
+                html += `<input type="checkbox" name="eg_selected_folders[]" class="eg-folder-checkbox" value="${escapeHtml(loc.relative_path)}" data-recommended="${loc.recommended ? '1' : '0'}" ${checked} ${disabledAttr} />`;
                 html += '<span class="dashicons dashicons-portfolio"></span>';
                 html += `<strong>${escapeHtml(loc.label)}</strong> `;
                 html += `<span class="eg-plugin-badge">${escapeHtml(loc.plugin_name)}</span> `;
-                html += `<span class="eg-badge-size">${escapeHtml(loc.size_human)}</span> `;
-                html += `<span class="eg-badge-files">${escapeHtml(loc.files_count)} fichiers</span> `;
+
+                if (exists) {
+                    html += `<span class="eg-badge-size">${escapeHtml(loc.size_human)}</span> `;
+                    html += `<span class="eg-badge-files">${escapeHtml(loc.files_count)} fichiers</span> `;
+                } else {
+                    html += '<span class="eg-badge-files eg-badge-not-created">Dossier non créé sur le disque (0 Ko)</span> ';
+                }
+
                 if (loc.description) {
                     html += `<small class="description" style="margin-left: 8px;">(${escapeHtml(loc.description)})</small>`;
                 }
@@ -257,7 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Actions de sélection rapide
     selectAllBtn?.addEventListener('click', () => {
-        $$<HTMLInputElement>('.eg-folder-checkbox').forEach(cb => { cb.checked = true; });
+        $$<HTMLInputElement>('.eg-folder-checkbox:not(:disabled)').forEach(cb => { cb.checked = true; });
     });
 
     deselectAllBtn?.addEventListener('click', () => {
@@ -265,7 +273,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     selectRecBtn?.addEventListener('click', () => {
-        $$<HTMLInputElement>('.eg-folder-checkbox').forEach(cb => {
+        $$<HTMLInputElement>('.eg-folder-checkbox:not(:disabled)').forEach(cb => {
             const isRec = cb.getAttribute('data-recommended') === '1';
             cb.checked = isRec;
         });

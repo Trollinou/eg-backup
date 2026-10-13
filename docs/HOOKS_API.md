@@ -73,9 +73,11 @@ add_filter('eg_backup_registered_locations', function (array $locations) {
 
 1. **Détection et calcul de volumétrie :**
    - EG Backup exécute le hook lors de l'analyse des fichiers.
+   - Les répertoires déclarés apparaissent systématiquement sous la catégorie **« Documents & Données déclarées »** avec le badge de votre plugin (ex. `[Gestion de Club]`).
    - Si le dossier existe sur le disque, sa taille totale et son nombre de fichiers sont calculés automatiquement.
-   - Il apparaît sous la catégorie **« Documents & Données déclarées »** avec le badge de votre plugin `[Gestion de Club]`.
+   - Si le dossier n'a pas encore été créé sur le disque (ex. nouveau plugin ou aucune donnée enregistrée), il reste affiché avec la mention *(Dossier non créé sur le disque - 0 Ko)* et sa sélection est désactivée afin de confirmer que l'intégration est active tout en protégeant le processus de sauvegarde.
 2. **Filtrage automatique :**
+   - Si votre dossier se trouve à l'intérieur de `wp-content/uploads/`, il est automatiquement dissocié de la médiathèque standard pour éviter les doublons et conserver son identification propre.
    - Lors de l'archivage, les motifs spécifiés dans la clé `exclude` sont strictement ignorés.
 3. **Traçabilité dans le Manifeste (`manifest.json`) :**
    - L'archive enregistre les métadonnées de l'emplacement dans son manifeste, garantissant une identification parfaite lors de transferts de serveurs.

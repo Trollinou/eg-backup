@@ -8,7 +8,19 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-13
+
+### Ajouté
+- **Affichage des emplacements déclarés non encore créés (`eg_backup_registered_locations`)** :
+  - Les emplacements déclarés par des addons ou extensions métier apparaissent désormais systématiquement dans l'explorateur de sauvegarde, même si leur répertoire physique n'existe pas encore sur le disque.
+  - Affichage d'un badge distinctif `Dossier non créé sur le disque (0 Ko)` et case à cocher désactivée (`disabled`) avec style atténué pour confirmer visuellement la bonne prise en compte du hook sans risque d'erreur à l'archivage.
+
 ### Corrigé
+- **Résolution et normalisation des chemins de fichiers (Windows / Multiplateforme)** :
+  - Remplacement de `strpos()` par `stripos()` dans [`FileScanner::getRegisteredLocations()`](file:///c:/Users/egagnon/Personnel/Dev/eg-backup/includes/Core/FileScanner.php) pour gérer la casse des lettres de lecteurs sous Windows (`C:` vs `c:`).
+  - Détection fiable des chemins absolus pour prévenir toute double concaténation erronée avec `WP_CONTENT_DIR`.
+- **Déduplication des répertoires déclarés dans `wp_media`** :
+  - Les dossiers situés dans `wp-content/uploads/` et déclarés via `eg_backup_registered_locations` sont désormais exclus de la liste brute de la médiathèque standard pour éviter les doublons et valoriser l'identité de l'extension avec son badge dédié.
 - **Gestion des fuseaux horaires et horodatage local** :
   - Remplacement de `gmdate()` par `wp_date()` pour la génération des noms d'archives et des identifiants de tâches AJAX/CLI, assurant la prise en compte du décalage horaire configuré dans WordPress.
   - Correction de l'affichage de la colonne *Date de création* dans la liste des sauvegardes via `wp_date()`, résolvant le décalage UTC constaté avec `date_i18n()` sur les timestamps UNIX bruts.
