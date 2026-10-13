@@ -20,7 +20,8 @@ async function buildAll() {
 					( dirent ) =>
 						dirent.isFile() &&
 						( dirent.name.endsWith( '.ts' ) || dirent.name.endsWith( '.js' ) ) &&
-						! dirent.name.endsWith( '.d.ts' )
+						! dirent.name.endsWith( '.d.ts' ) &&
+						! dirent.name.startsWith( '_' )
 				)
 				.map( ( dirent ) => path.join( srcDir, dirent.name ) )
 		: [];

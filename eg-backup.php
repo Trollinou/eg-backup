@@ -4,14 +4,14 @@
  * Plugin URI: https://github.com/eg-backup/eg-backup
  * Description: Sauvegarde et restauration intelligente de WordPress : base de données complète, sélection granulaire des données de plugins hors BDD, manifeste des dépendances (plugins/thèmes) et assistant de restauration interactif.
  * Version: 1.0.0
- * Author: EG Dev
- * Author URI: https://github.com/eg-backup
+ * Author: Etienne Gagnon
+ * Author URI: https://github.com/Trollinou
  * License: GPL-2.0+
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: eg-backup
  * Domain Path: /languages
- * Requires at least: 5.6
- * Requires PHP: 7.4
+ * Requires at least: 7.1
+ * Requires PHP: 8.4
  */
 
 // Interdiction d'accès direct.

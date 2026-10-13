@@ -40,11 +40,48 @@ eg-backup/
 │       └── BackupCommand.php     # Commandes WP-CLI (wp eg-backup)
 ├── assets/
 │   ├── css/
-│   │   └── admin.css             # Interface moderne et responsive
+│   │   ├── admin.css             # CSS compilé (ne pas modifier directement)
+│   │   └── admin-rtl.css         # CSS RTL généré automatiquement
 │   └── js/
-│       ├── backup.js             # Scan, sélection et boucle AJAX de sauvegarde
-│       └── restore.js            # Détection de dépendances et boucle AJAX de restauration
+│       ├── backup.js             # Bundle JS compilé (ne pas modifier directement)
+│       └── restore.js            # Bundle JS compilé (ne pas modifier directement)
+├── src/
+│   ├── scss/
+│   │   └── admin.scss            # Source des styles SCSS
+│   └── ts/
+│       ├── backup.ts             # Source TypeScript du scan et sauvegarde
+│       ├── restore.ts            # Source TypeScript de l'assistant de restauration
+│       └── globals.d.ts          # Déclarations des types globaux
+├── AGENTS.md                     # Règles de développement pour les assistants IA
+├── tsconfig.json                 # Configuration TypeScript
 └── README.md
+```
+
+---
+
+## 🛠️ Développement & Compilation
+
+Le développement front-end privilégie exclusivement **SCSS** et **TypeScript** :
+- **Styles** : Développez dans `src/scss/`. Ne modifiez jamais directement les fichiers de `assets/css/`.
+- **Scripts** : Développez en TypeScript dans `src/ts/`. Ne modifiez jamais directement les fichiers de `assets/js/`.
+
+### Commandes npm disponibles
+
+```bash
+# Compilation globale (SCSS + TypeScript)
+npm run build
+
+# Compilation des styles SCSS (avec génération RTL automatique)
+npm run build:css
+
+# Compilation des scripts TypeScript (via esbuild)
+npm run build:js
+
+# Vérification du typage TypeScript
+npm run typecheck
+
+# Création du package ZIP prêt pour WordPress
+npm run package
 ```
 
 ---

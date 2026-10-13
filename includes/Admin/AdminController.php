@@ -12,9 +12,16 @@ use EGBackup\Core\Archiver;
  */
 class AdminController {
     /**
+     * Identifiants des pages d'administration enregistrées (hook suffixes).
+     *
+     * @var array<string, string>
+     */
+    private array $hookSuffixes = [];
+
+    /**
      * Initialise les hooks WordPress d'administration.
      */
-    public function init() {
+    public function init(): void {
         add_action('admin_menu', [$this, 'registerMenus']);
         add_action('admin_enqueue_scripts', [$this, 'enqueueAssets']);
         add_action('admin_init', [$this, 'handleDownload']);
@@ -23,10 +30,10 @@ class AdminController {
     /**
      * Enregistre les menus du plugin dans l'interface WordPress.
      */
-    public function registerMenus() {
+    public function registerMenus(): void {
         $parentSlug = 'eg-backup';
 
-        add_menu_page(
+        $this->hookSuffixes['backup'] = (string) add_menu_page(
             'EG Backup',
             'EG Backup',
             'manage_options',
@@ -36,7 +43,7 @@ class AdminController {
             80
         );
 
-        add_submenu_page(
+        $this->hookSuffixes['backup_sub'] = (string) add_submenu_page(
             $parentSlug,
             'Créer une sauvegarde',
             'Nouvelle sauvegarde',
@@ -45,7 +52,7 @@ class AdminController {
             [$this, 'renderBackupPage']
         );
 
-        add_submenu_page(
+        $this->hookSuffixes['list'] = (string) add_submenu_page(
             $parentSlug,
             'Sauvegardes existantes',
             'Mes sauvegardes',
@@ -54,7 +61,7 @@ class AdminController {
             [$this, 'renderListPage']
         );
 
-        add_submenu_page(
+        $this->hookSuffixes['restore'] = (string) add_submenu_page(
             $parentSlug,
             'Assistant de restauration',
             'Restaurer',
@@ -65,43 +72,84 @@ class AdminController {
     }
 
     /**
-     * Charge les feuilles de style et scripts nécessaires.
+     * Enregistre l'ensemble des styles et scripts du plugin (séparation stricte Register vs Enqueue).
      */
-    public function enqueueAssets($hook) {
-        if (strpos($hook, 'eg-backup') === false) {
-            return;
-        }
-
-        // CSS d'administration
-        wp_enqueue_style(
+    private function registerAssets(): void {
+        // Enregistrement des feuilles de style d'administration
+        wp_register_style(
             'eg-backup-admin',
             EG_BACKUP_PLUGIN_URL . 'assets/css/admin.css',
             [],
             EG_BACKUP_VERSION
         );
 
-        // Scripts JS
-        if (strpos($hook, 'eg-backup-restore') !== false) {
-            wp_enqueue_script(
-                'eg-backup-restore',
-                EG_BACKUP_PLUGIN_URL . 'assets/js/restore.js',
-                ['jquery'],
-                EG_BACKUP_VERSION,
-                true
-            );
+        // Stratégie moderne de chargement asynchrone / différé (WordPress 6.3+)
+        $scriptArgs = [
+            'strategy'  => 'defer',
+            'in_footer' => true,
+        ];
+
+        // 1. Script du module de création de sauvegarde (Scan d'arborescence, dump BDD par lots, ZIP)
+        wp_register_script(
+            'eg-backup-create',
+            EG_BACKUP_PLUGIN_URL . 'assets/js/backup.js',
+            [],
+            EG_BACKUP_VERSION,
+            $scriptArgs
+        );
+
+        // 2. Script léger du module de gestion de la liste des archives (Suppression AJAX réactive)
+        wp_register_script(
+            'eg-backup-list',
+            EG_BACKUP_PLUGIN_URL . 'assets/js/list.js',
+            [],
+            EG_BACKUP_VERSION,
+            $scriptArgs
+        );
+
+        // 3. Script du module de restauration (Inspection du manifeste, BDD, réécriture URLs)
+        wp_register_script(
+            'eg-backup-restore',
+            EG_BACKUP_PLUGIN_URL . 'assets/js/restore.js',
+            [],
+            EG_BACKUP_VERSION,
+            $scriptArgs
+        );
+    }
+
+    /**
+     * Charge contextuellement les styles et scripts nécessaires sur les écrans du plugin.
+     *
+     * @param string $hook Le hook_suffix de la page d'administration courante.
+     */
+    public function enqueueAssets(string $hook): void {
+        // Chargement contextuel strict : abandonner immédiatement si nous ne sommes pas sur une page du plugin.
+        if (!in_array($hook, $this->hookSuffixes, true)) {
+            return;
+        }
+
+        // Étape 1 : Enregistrement découplé des ressources
+        $this->registerAssets();
+
+        // Étape 2 : Feuille de style requise sur les écrans d'administration du plugin
+        wp_enqueue_style('eg-backup-admin');
+
+        // Étape 3 : Chargement granulaire à la demande selon la page active
+        if ($hook === $this->hookSuffixes['restore']) {
+            wp_enqueue_script('eg-backup-restore');
             wp_localize_script('eg-backup-restore', 'egBackupData', [
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce'   => wp_create_nonce('eg_backup_nonce'),
             ]);
-        } else {
-            wp_enqueue_script(
-                'eg-backup-admin',
-                EG_BACKUP_PLUGIN_URL . 'assets/js/backup.js',
-                ['jquery'],
-                EG_BACKUP_VERSION,
-                true
-            );
-            wp_localize_script('eg-backup-admin', 'egBackupData', [
+        } elseif ($hook === $this->hookSuffixes['list']) {
+            wp_enqueue_script('eg-backup-list');
+            wp_localize_script('eg-backup-list', 'egBackupData', [
+                'ajaxUrl' => admin_url('admin-ajax.php'),
+                'nonce'   => wp_create_nonce('eg_backup_nonce'),
+            ]);
+        } elseif ($hook === $this->hookSuffixes['backup'] || $hook === $this->hookSuffixes['backup_sub']) {
+            wp_enqueue_script('eg-backup-create');
+            wp_localize_script('eg-backup-create', 'egBackupData', [
                 'ajaxUrl'       => admin_url('admin-ajax.php'),
                 'nonce'         => wp_create_nonce('eg_backup_nonce'),
                 'downloadNonce' => wp_create_nonce('eg_backup_download_action'),
