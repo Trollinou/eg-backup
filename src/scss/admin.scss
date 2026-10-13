@@ -438,3 +438,191 @@
     border-radius: 4px;
     margin-bottom: 16px;
 }
+
+/* Grille de types de sauvegarde (Cœur, Médias, Complet) */
+.eg-backup-types-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.eg-type-card {
+    display: block;
+    cursor: pointer;
+    background: #ffffff;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 20px;
+    transition: all 0.2s ease;
+    position: relative;
+
+    input[type="radio"] {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    &:hover {
+        border-color: #94a3b8;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+
+    &.active {
+        border-color: #2271b1;
+        background: #f0f6fc;
+        box-shadow: 0 0 0 1px #2271b1, 0 4px 12px rgba(34, 113, 177, 0.08);
+
+        .eg-type-icon .dashicons {
+            color: #2271b1;
+        }
+
+        h3 {
+            color: #0c4a6e;
+        }
+    }
+}
+
+.eg-type-icon {
+    margin-bottom: 12px;
+
+    .dashicons {
+        font-size: 32px;
+        width: 32px;
+        height: 32px;
+        color: #64748b;
+        transition: color 0.2s ease;
+    }
+}
+
+.eg-type-card h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 8px 0;
+    color: #1e293b;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.eg-type-card p {
+    font-size: 13px;
+    color: #64748b;
+    line-height: 1.5;
+    margin: 0 0 16px 0;
+}
+
+.eg-type-footer {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    font-size: 12px;
+}
+
+.eg-badge-speed {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #dcfce7;
+    color: #166534;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+
+    .dashicons {
+        font-size: 14px;
+        width: 14px;
+        height: 14px;
+    }
+}
+
+.eg-badge-size-est {
+    background: #e2e8f0;
+    color: #334155;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+/* Box d'option d'exclusion des miniatures */
+.eg-thumbs-option-box {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-left: 4px solid #3b82f6;
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+
+    .eg-checkbox-label {
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+    }
+
+    .description {
+        margin: 6px 0 0 24px;
+        font-size: 12px;
+        color: #475569;
+        line-height: 1.5;
+    }
+}
+
+/* Badges de types de sauvegarde dans la liste */
+.eg-badge-type-core {
+    background: #e0f2fe;
+    color: #0369a1;
+    font-weight: 600;
+}
+
+.eg-badge-type-media {
+    background: #fef3c7;
+    color: #92400e;
+    font-weight: 600;
+}
+
+.eg-badge-type-full {
+    background: #f1f5f9;
+    color: #334155;
+    font-weight: 600;
+}
+
+/* Catégorisation fine dans l'explorateur */
+.eg-cat-group {
+    margin-bottom: 24px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #ffffff;
+}
+
+.eg-cat-header {
+    background: #f8fafc;
+    padding: 12px 18px;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    h4 {
+        margin: 0;
+        font-size: 14px;
+        color: #1e293b;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+}
+
+.eg-plugin-badge {
+    background: #e0e7ff;
+    color: #3730a3;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}

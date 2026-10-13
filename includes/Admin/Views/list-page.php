@@ -61,19 +61,38 @@ foreach ($backups as $b) {
                         );
                         $restoreUrl = admin_url('admin.php?page=eg-backup-restore&file=' . urlencode($backup['filename']));
                         $manifest = $backup['manifest'];
-                        $pluginsCount = !empty($manifest['plugins']) ? count($manifest['plugins']) : 0;
+                        $backupType = $manifest['backup_type'] ?? (strpos($backup['filename'], 'core') !== false ? 'core' : (strpos($backup['filename'], 'media') !== false ? 'media' : 'full'));
+                        $thumbsExcluded = !empty($manifest['media_options']['thumbs_excluded']);
                     ?>
                         <tr id="row-<?php echo esc_attr(sanitize_title($backup['filename'])); ?>">
                             <td>
                                 <strong><?php echo esc_html($backup['filename']); ?></strong>
+                                <div style="margin-top: 4px;">
+                                    <?php if ($backupType === 'core') : ?>
+                                        <span class="eg-badge-pill eg-badge-type-core"><span class="dashicons dashicons-database"></span> Cœur / BDD</span>
+                                    <?php elseif ($backupType === 'media') : ?>
+                                        <span class="eg-badge-pill eg-badge-type-media"><span class="dashicons dashicons-images-alt2"></span> Médias & Docs</span>
+                                        <?php if ($thumbsExcluded) : ?>
+                                            <span class="eg-badge-pill eg-badge-diff" title="Miniatures exclues">Sans miniatures</span>
+                                        <?php endif; ?>
+                                    <?php else : ?>
+                                        <span class="eg-badge-pill eg-badge-type-full"><span class="dashicons dashicons-portfolio"></span> Complète</span>
+                                    <?php endif; ?>
+                                </div>
                             </td>
                             <td><?php echo esc_html($backup['date']); ?></td>
                             <td><span class="eg-badge-size"><?php echo esc_html($backup['size_human']); ?></span></td>
                             <td>
                                 <?php if ($manifest) : ?>
-                                    <span class="eg-badge-info" title="<?php echo esc_attr(sprintf('%d extensions documentées', $pluginsCount)); ?>">
-                                        <?php echo esc_html(sprintf('%d ext. / %s', $pluginsCount, $manifest['theme']['name'] ?? 'Thème')); ?>
-                                    </span>
+                                    <?php if ($backupType === 'media') : ?>
+                                        <span class="eg-badge-info" title="<?php echo esc_attr(sprintf('%d dossier(s) archivé(s)', count($manifest['files_included'] ?? []))); ?>">
+                                            <?php echo esc_html(sprintf('%d dossier(s) de données', count($manifest['files_included'] ?? []))); ?>
+                                        </span>
+                                    <?php else : ?>
+                                        <span class="eg-badge-info" title="<?php echo esc_attr(sprintf('%d extensions documentées', $pluginsCount)); ?>">
+                                            <?php echo esc_html(sprintf('%d ext. / %s', $pluginsCount, $manifest['theme']['name'] ?? 'Thème')); ?>
+                                        </span>
+                                    <?php endif; ?>
                                 <?php else : ?>
                                     <span class="description">Non analysé</span>
                                 <?php endif; ?>

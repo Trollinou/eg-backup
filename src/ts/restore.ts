@@ -1,5 +1,5 @@
 /**
- * Assistant de restauration interactif et vérification des dépendances (Vanilla TypeScript).
+ * Assistant de restauration interactif et contextuel (Vanilla TypeScript).
  */
 
 import { $, $$, escapeHtml, wpAjax, extractErrorMessage } from './_common';
@@ -12,6 +12,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const { ajaxUrl, nonce } = egBackupData;
     let inspectedBackupFilename = '';
     let inspectedManifest: any = null;
+    let isMediaOnly = false;
+    let thumbsExcluded = false;
     let restoreToken = '';
 
     const localBackupSelect = $<HTMLSelectElement>('#eg-local-backup-select');
@@ -23,6 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const restoreSourceCard = $<HTMLElement>('#eg-restore-source-card');
     const restoreProgressCard = $<HTMLElement>('#eg-restore-progress-card');
     const manifestMetaGrid = $<HTMLElement>('#eg-manifest-meta-grid');
+    const mediaRestoreNotice = $<HTMLElement>('#eg-media-restore-notice');
+    const coreRestoreSections = $<HTMLElement>('#eg-core-restore-sections');
     const pluginsAlertBox = $<HTMLElement>('#eg-plugins-alert-box');
     const pluginsTableBody = $<HTMLTableSectionElement>('#eg-plugins-table-body');
     const themeCheckBox = $<HTMLElement>('#eg-theme-check-box');
@@ -33,6 +37,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const restoreStatus = $<HTMLElement>('#eg-restore-status');
     const restoreLogConsole = $<HTMLElement>('#eg-restore-log-console');
     const restoreSuccessBox = $<HTMLElement>('#eg-restore-success-box');
+    const restoreSuccessDesc = $<HTMLElement>('#eg-restore-success-desc');
+    const restoreThumbsGuide = $<HTMLElement>('#eg-restore-thumbs-guide');
+    const restoreMaintNotice = $<HTMLElement>('#eg-restore-maint-notice');
 
     // Auto-inspection si un fichier est passé dans l'URL (?file=...)
     const urlParams = new URLSearchParams(window.location.search);
@@ -106,74 +113,87 @@ document.addEventListener('DOMContentLoaded', () => {
         inspectedManifest = response.data.manifest;
         const comp = response.data.comparison;
 
+        isMediaOnly = Boolean(comp.is_media_only);
+        thumbsExcluded = Boolean(comp.thumbs_excluded);
+        const backupType = comp.backup_type || 'full';
+
         // Remplir métadonnées
         let metaHtml = '';
         metaHtml += `<div class="eg-meta-item"><strong>Fichier</strong><span>${escapeHtml(inspectedBackupFilename)}</span></div>`;
-        metaHtml += `<div class="eg-meta-item"><strong>Site d'origine</strong><span>${escapeHtml(inspectedManifest.site?.name || 'WordPress')}</span></div>`;
+        metaHtml += `<div class="eg-meta-item"><strong>Type d'archive</strong><span>${escapeHtml(backupType.toUpperCase())}</span></div>`;
         metaHtml += `<div class="eg-meta-item"><strong>Date de création</strong><span>${escapeHtml(inspectedManifest.created_at)}</span></div>`;
-        metaHtml += `<div class="eg-meta-item"><strong>Version WP source</strong><span>WP ${escapeHtml(inspectedManifest.environment?.version)}</span></div>`;
+        metaHtml += `<div class="eg-meta-item"><strong>Version WP source</strong><span>WP ${escapeHtml(inspectedManifest.environment?.version || 'N/A')}</span></div>`;
         if (manifestMetaGrid) manifestMetaGrid.innerHTML = metaHtml;
 
-        // Alerte si extensions manquantes
-        let alertHtml = '';
-        if (comp.missing_plugins_count > 0) {
-            alertHtml += '<div class="notice notice-warning inline">';
-            alertHtml += `<p><strong>Attention :</strong> ${comp.missing_plugins_count} extension(s) requise(s) dans cette sauvegarde ne sont pas actuellement installée(s) sur ce site. `;
-            alertHtml += 'Installez-les dès maintenant ci-dessous avant d\'appliquer la restauration.</p>';
-            alertHtml += '</div>';
+        // Adaptation selon le type d'archive (Cœur vs Médias)
+        if (isMediaOnly) {
+            if (mediaRestoreNotice) mediaRestoreNotice.style.display = 'block';
+            if (coreRestoreSections) coreRestoreSections.style.display = 'none';
         } else {
-            alertHtml += '<div class="notice notice-success inline">';
-            alertHtml += '<p><strong>Parfait :</strong> Toutes les extensions requises sont déjà installées sur ce site !</p>';
-            alertHtml += '</div>';
-        }
-        if (pluginsAlertBox) pluginsAlertBox.innerHTML = alertHtml;
+            if (mediaRestoreNotice) mediaRestoreNotice.style.display = 'none';
+            if (coreRestoreSections) coreRestoreSections.style.display = 'block';
 
-        // Remplir le tableau des plugins
-        let rowsHtml = '';
-        comp.plugins.forEach((plugin: any) => {
-            let statusBadge = '';
-            let actionBtn = '';
-
-            if (plugin.status === 'installed') {
-                statusBadge = `<span class="eg-badge-pill eg-badge-installed">Installé (${escapeHtml(plugin.installed_version)})</span>`;
-                actionBtn = '<span class="dashicons dashicons-yes-alt" style="color:#22c55e;"></span> Prêt';
-            } else if (plugin.status === 'version_diff') {
-                statusBadge = `<span class="eg-badge-pill eg-badge-diff">Diff. version (${escapeHtml(plugin.installed_version)})</span>`;
-                actionBtn = '<span class="description">Compatible (attention aux écarts majeurs)</span>';
+            // Alerte si extensions manquantes
+            let alertHtml = '';
+            if (comp.missing_plugins_count > 0) {
+                alertHtml += '<div class="notice notice-warning inline">';
+                alertHtml += `<p><strong>Attention :</strong> ${comp.missing_plugins_count} extension(s) requise(s) dans cette sauvegarde ne sont pas actuellement installée(s) sur ce site. `;
+                alertHtml += 'Installez-les dès maintenant ci-dessous avant d\'appliquer la restauration.</p>';
+                alertHtml += '</div>';
             } else {
-                statusBadge = '<span class="eg-badge-pill eg-badge-missing">Non installé</span>';
-                if (plugin.is_wporg && plugin.slug) {
-                    actionBtn = `<button type="button" class="button button-small button-primary eg-btn-install-plugin" data-slug="${escapeHtml(plugin.slug)}">`;
-                    actionBtn += '<span class="dashicons dashicons-download"></span> Installer (WP.org)';
-                    actionBtn += '</button>';
-                } else {
-                    actionBtn = '<span class="description">À réinstaller manuellement (tiers/payant)</span>';
-                }
+                alertHtml += '<div class="notice notice-success inline">';
+                alertHtml += '<p><strong>Parfait :</strong> Toutes les extensions requises sont déjà installées sur ce site !</p>';
+                alertHtml += '</div>';
             }
+            if (pluginsAlertBox) pluginsAlertBox.innerHTML = alertHtml;
 
-            rowsHtml += '<tr>';
-            rowsHtml += `<td><strong>${escapeHtml(plugin.name)}</strong><br><small class="description">${escapeHtml(plugin.file)}</small></td>`;
-            rowsHtml += `<td>${escapeHtml(plugin.required_version || 'N/A')}</td>`;
-            rowsHtml += `<td>${statusBadge}</td>`;
-            rowsHtml += `<td id="action-cell-${escapeHtml(plugin.slug)}">${actionBtn}</td>`;
-            rowsHtml += '</tr>';
-        });
-        if (pluginsTableBody) pluginsTableBody.innerHTML = rowsHtml;
+            // Remplir le tableau des plugins
+            let rowsHtml = '';
+            comp.plugins.forEach((plugin: any) => {
+                let statusBadge = '';
+                let actionBtn = '';
 
-        // Bilan du thème
-        const theme = comp.theme;
-        const themeStatus = theme.is_installed
-            ? '<span class="eg-badge-pill eg-badge-installed">Installé</span>'
-            : '<span class="eg-badge-pill eg-badge-missing">Non installé</span>';
+                if (plugin.status === 'installed') {
+                    statusBadge = `<span class="eg-badge-pill eg-badge-installed">Installé (${escapeHtml(plugin.installed_version)})</span>`;
+                    actionBtn = '<span class="dashicons dashicons-yes-alt" style="color:#22c55e;"></span> Prêt';
+                } else if (plugin.status === 'version_diff') {
+                    statusBadge = `<span class="eg-badge-pill eg-badge-diff">Diff. version (${escapeHtml(plugin.installed_version)})</span>`;
+                    actionBtn = '<span class="description">Compatible (attention aux écarts majeurs)</span>';
+                } else {
+                    statusBadge = '<span class="eg-badge-pill eg-badge-missing">Non installé</span>';
+                    if (plugin.is_wporg && plugin.slug) {
+                        actionBtn = `<button type="button" class="button button-small button-primary eg-btn-install-plugin" data-slug="${escapeHtml(plugin.slug)}">`;
+                        actionBtn += '<span class="dashicons dashicons-download"></span> Installer (WP.org)';
+                        actionBtn += '</button>';
+                    } else {
+                        actionBtn = '<span class="description">À réinstaller manuellement (tiers/payant)</span>';
+                    }
+                }
 
-        let themeHtml = '<div style="margin: 16px 0; padding: 12px; background: #fff; border: 1px solid #dcdcde; border-radius: 6px;">';
-        themeHtml += `<strong>Thème requis :</strong> ${escapeHtml(theme.name)} (version ${escapeHtml(theme.required_version)}) — État : ${themeStatus}`;
-        themeHtml += '</div>';
-        if (themeCheckBox) themeCheckBox.innerHTML = themeHtml;
+                rowsHtml += '<tr>';
+                rowsHtml += `<td><strong>${escapeHtml(plugin.name)}</strong><br><small class="description">${escapeHtml(plugin.file)}</small></td>`;
+                rowsHtml += `<td>${escapeHtml(plugin.required_version || 'N/A')}</td>`;
+                rowsHtml += `<td>${statusBadge}</td>`;
+                rowsHtml += `<td id="action-cell-${escapeHtml(plugin.slug)}">${actionBtn}</td>`;
+                rowsHtml += '</tr>';
+            });
+            if (pluginsTableBody) pluginsTableBody.innerHTML = rowsHtml;
 
-        // Pré-remplir la migration d'URL
-        if (replaceOldUrlInput) {
-            replaceOldUrlInput.value = inspectedManifest.environment?.siteurl || '';
+            // Bilan du thème
+            const theme = comp.theme;
+            const themeStatus = theme.is_installed
+                ? '<span class="eg-badge-pill eg-badge-installed">Installé</span>'
+                : '<span class="eg-badge-pill eg-badge-missing">Non installé</span>';
+
+            let themeHtml = '<div style="margin: 16px 0; padding: 12px; background: #fff; border: 1px solid #dcdcde; border-radius: 6px;">';
+            themeHtml += `<strong>Thème requis :</strong> ${escapeHtml(theme.name)} (version ${escapeHtml(theme.required_version)}) — État : ${themeStatus}`;
+            themeHtml += '</div>';
+            if (themeCheckBox) themeCheckBox.innerHTML = themeHtml;
+
+            // Pré-remplir la migration d'URL
+            if (replaceOldUrlInput) {
+                replaceOldUrlInput.value = inspectedManifest.environment?.siteurl || '';
+            }
         }
 
         if (restoreManifestCard) {
@@ -221,7 +241,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Lancement de la restauration
     startRestoreBtn?.addEventListener('click', async () => {
-        if (!confirm('ATTENTION : La restauration écrasera la base de données actuelle par celle de la sauvegarde.\n\nÊtes-vous sûr de vouloir continuer ?')) {
+        const confirmMessage = isMediaOnly
+            ? 'Confirmez-vous la réintégration des fichiers médias et documents de cette archive ?'
+            : 'ATTENTION : La restauration écrasera la base de données actuelle par celle de la sauvegarde.\n\nÊtes-vous sûr de vouloir continuer ?';
+
+        if (!confirm(confirmMessage)) {
             return;
         }
 
@@ -230,8 +254,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (restoreProgressCard) restoreProgressCard.style.display = 'block';
         if (restoreLogConsole) restoreLogConsole.innerHTML = '';
 
+        if (isMediaOnly && restoreMaintNotice) {
+            restoreMaintNotice.style.display = 'none';
+        }
+
         logMessage('info', 'Démarrage du processus de restauration...');
-        updateRestoreProgress(5, 'Décompression et activation de la maintenance...');
+        updateRestoreProgress(5, 'Décompression de l\'archive...');
         activateRestoreStep('rstep-extract');
 
         const oldUrl = replaceOldUrlInput?.value || '';
@@ -239,7 +267,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Étape 1 : Start & Unzip
         try {
-            const response = await wpAjax<{ job_id: string; restore_token: string; message: string }>(ajaxUrl, {
+            const response = await wpAjax<{
+                job_id: string;
+                restore_token: string;
+                has_sql: boolean;
+                is_media_only: boolean;
+                message: string;
+            }>(ajaxUrl, {
                 action: 'eg_restore_start',
                 nonce,
                 filename: inspectedBackupFilename,
@@ -254,10 +288,17 @@ document.addEventListener('DOMContentLoaded', () => {
             restoreToken = response.data.restore_token || '';
             logMessage('success', response.data.message);
             markRestoreStepDone('rstep-extract');
-            activateRestoreStep('rstep-db');
 
-            // Étape 2 : Import SQL par lots
-            await processRestoreDb(jobId, 0, oldUrl, newUrl);
+            if (isMediaOnly || !response.data.has_sql) {
+                logMessage('info', 'Étape base de données ignorée (archive de fichiers médias).');
+                markRestoreStepDone('rstep-db');
+                markRestoreStepDone('rstep-replace');
+                activateRestoreStep('rstep-files');
+                await processRestoreFiles(jobId);
+            } else {
+                activateRestoreStep('rstep-db');
+                await processRestoreDb(jobId, 0, oldUrl, newUrl);
+            }
         } catch (err: any) {
             handleRestoreError(`Erreur réseau au lancement de la restauration : ${err.message || err}`);
         }
@@ -278,17 +319,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 offset,
             });
 
-            if (!response || !response.success || !response.data) {
+            if (!response.success || !response.data) {
                 handleRestoreError(extractErrorMessage(response, 'Erreur lors de l\'import SQL.'), jobId);
                 return;
             }
 
             const data = response.data;
-            const dbPercent = Math.min(60, Math.round(15 + (data.progress * 0.45)));
-            updateRestoreProgress(dbPercent, data.message);
+            const dbProgress = Math.min(50, Math.round(5 + (data.progress * 0.45)));
+            updateRestoreProgress(dbProgress, data.message);
 
             if (data.eof) {
-                logMessage('success', 'Base de données réimportée intégralement.');
+                logMessage('success', 'Base de données importée avec succès.');
                 markRestoreStepDone('rstep-db');
                 activateRestoreStep('rstep-replace');
 
@@ -298,13 +339,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 await processRestoreDb(jobId, data.offset, oldUrl, newUrl);
             }
         } catch (err: any) {
-            handleRestoreError(`Erreur réseau lors de l'import SQL : ${err.message || err}`, jobId);
+            handleRestoreError(`Erreur réseau lors de l'import BDD : ${err.message || err}`, jobId);
         }
     }
 
     async function processRestoreReplace(jobId: string, oldUrl: string, newUrl: string): Promise<void> {
-        updateRestoreProgress(70, 'Mise à jour des adresses et liens (Search & Replace)...');
-        logMessage('info', 'Vérification et adaptation des URLs sérialisées...');
+        updateRestoreProgress(55, 'Mise à jour des adresses et liens (Search & Replace)...');
 
         try {
             const response = await wpAjax<{ message: string }>(ajaxUrl, {
@@ -316,25 +356,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 new_url: newUrl,
             });
 
-            if (!response || !response.success || !response.data) {
-                handleRestoreError(extractErrorMessage(response, 'Erreur lors du remplacement d\'URLs.'), jobId);
+            if (!response.success) {
+                handleRestoreError(extractErrorMessage(response, 'Erreur lors du Search & Replace.'), jobId);
                 return;
             }
 
-            logMessage('success', response.data.message);
+            logMessage('info', response.data?.message || 'Search & Replace terminé.');
             markRestoreStepDone('rstep-replace');
             activateRestoreStep('rstep-files');
 
-            // Étape 4 : Restauration des fichiers
+            // Étape 4 : Fichiers
             await processRestoreFiles(jobId);
         } catch (err: any) {
-            handleRestoreError(`Erreur réseau lors du remplacement des URLs : ${err.message || err}`, jobId);
+            handleRestoreError(`Erreur réseau lors du Search & Replace : ${err.message || err}`, jobId);
         }
     }
 
     async function processRestoreFiles(jobId: string): Promise<void> {
-        updateRestoreProgress(85, 'Restauration des fichiers vers wp-content...');
-        logMessage('info', 'Copie des dossiers de données dans wp-content...');
+        updateRestoreProgress(75, 'Restauration des fichiers vers wp-content...');
+        logMessage('info', 'Copie des fichiers vers leurs dossiers d\'origine...');
 
         try {
             const response = await wpAjax<{ message: string }>(ajaxUrl, {
@@ -344,12 +384,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 restore_token: restoreToken,
             });
 
-            if (!response || !response.success || !response.data) {
-                handleRestoreError(extractErrorMessage(response, 'Erreur lors de la restauration des fichiers.'), jobId);
+            if (!response.success) {
+                handleRestoreError(extractErrorMessage(response, 'Erreur lors de la copie des fichiers.'), jobId);
                 return;
             }
 
-            logMessage('success', response.data.message);
+            logMessage('success', 'Fichiers restaurés avec succès.');
             markRestoreStepDone('rstep-files');
             activateRestoreStep('rstep-finalize');
 
@@ -361,18 +401,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function processRestoreFinalize(jobId: string): Promise<void> {
-        updateRestoreProgress(95, 'Désactivation du mode maintenance et nettoyage...');
-        logMessage('info', 'Suppression des fichiers temporaires et retour en ligne...');
+        updateRestoreProgress(95, 'Nettoyage des fichiers temporaires et finalisation...');
 
         try {
-            const response = await wpAjax<{ message: string }>(ajaxUrl, {
+            const response = await wpAjax<{
+                message: string;
+                is_media_only?: boolean;
+                thumbs_excluded?: boolean;
+            }>(ajaxUrl, {
                 action: 'eg_restore_finalize',
                 nonce,
                 job_id: jobId,
                 restore_token: restoreToken,
             });
 
-            if (!response || !response.success || !response.data) {
+            if (!response.success || !response.data) {
                 handleRestoreError(extractErrorMessage(response, 'Erreur lors de la finalisation.'), jobId);
                 return;
             }
@@ -380,6 +423,14 @@ document.addEventListener('DOMContentLoaded', () => {
             updateRestoreProgress(100, 'Restauration terminée avec succès !');
             markRestoreStepDone('rstep-finalize');
             logMessage('success', response.data.message);
+
+            if (restoreSuccessDesc) {
+                restoreSuccessDesc.textContent = response.data.message;
+            }
+
+            if (thumbsExcluded && restoreThumbsGuide) {
+                restoreThumbsGuide.style.display = 'block';
+            }
 
             if (restoreSuccessBox) restoreSuccessBox.style.display = 'block';
         } catch (err: any) {

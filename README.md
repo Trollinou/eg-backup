@@ -52,6 +52,8 @@ eg-backup/
 │       ├── backup.ts             # Source TypeScript du scan et sauvegarde
 │       ├── restore.ts            # Source TypeScript de l'assistant de restauration
 │       └── globals.d.ts          # Déclarations des types globaux
+├── docs/
+│   └── HOOKS_API.md              # Documentation de l'API de hooks pour plugins tiers
 ├── AGENTS.md                     # Règles de développement pour les assistants IA
 ├── tsconfig.json                 # Configuration TypeScript
 └── README.md

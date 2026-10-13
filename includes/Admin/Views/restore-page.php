@@ -60,42 +60,50 @@ if (!defined('ABSPATH')) {
         <!-- Métadonnées de l'archive -->
         <div class="eg-manifest-meta-grid" id="eg-manifest-meta-grid"></div>
 
-        <!-- Alerte si extensions manquantes -->
-        <div id="eg-plugins-alert-box"></div>
-
-        <!-- Tableau des plugins requis -->
-        <div class="eg-table-responsive">
-            <table class="wp-list-table widefat fixed striped eg-plugins-check-table">
-                <thead>
-                    <tr>
-                        <th style="width: 35%;">Extension requise</th>
-                        <th style="width: 15%;">Version sauvegarde</th>
-                        <th style="width: 20%;">État actuel</th>
-                        <th style="width: 30%;">Action recommandée</th>
-                    </tr>
-                </thead>
-                <tbody id="eg-plugins-table-body">
-                    <!-- Rempli dynamiquement en JS -->
-                </tbody>
-            </table>
+        <!-- Notice spécifique pour les archives de médias -->
+        <div id="eg-media-restore-notice" class="notice notice-info inline" style="display: none; margin-bottom: 20px;">
+            <p><strong><span class="dashicons dashicons-images-alt2"></span> Archive de Médias & Documents :</strong> Cette sauvegarde réintègre vos fichiers dans <code>wp-content</code> (uploads, galeries, documents). Votre base de données actuelle ne sera pas écrasée et votre session administrateur ne sera pas déconnectée.</p>
         </div>
 
-        <!-- Bilan du thème -->
-        <div class="eg-theme-check-box" id="eg-theme-check-box"></div>
+        <!-- Section de contrôle des plugins et thèmes (pour Cœur et Complet) -->
+        <div id="eg-core-restore-sections">
+            <!-- Alerte si extensions manquantes -->
+            <div id="eg-plugins-alert-box"></div>
 
-        <!-- Options de migration de domaine / URLs -->
-        <div class="eg-migration-options-box">
-            <h3><span class="dashicons dashicons-admin-links"></span> Réglages de domaine et URLs (Migration)</h3>
-            <p class="description">Si vous restaurez sur un nouveau nom de domaine ou en local, les adresses seront automatiquement adaptées dans toute la base de données (avec respect des données sérialisées).</p>
-            <div class="eg-form-row">
-                <label>
-                    <strong>URL source (sauvegarde) :</strong>
-                    <input type="text" id="eg-replace-old-url" class="regular-text" readonly />
-                </label>
-                <label>
-                    <strong>Nouvelle URL cible :</strong>
-                    <input type="text" id="eg-replace-new-url" class="regular-text" value="<?php echo esc_attr(get_option('siteurl')); ?>" />
-                </label>
+            <!-- Tableau des plugins requis -->
+            <div class="eg-table-responsive">
+                <table class="wp-list-table widefat fixed striped eg-plugins-check-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 35%;">Extension requise</th>
+                            <th style="width: 15%;">Version sauvegarde</th>
+                            <th style="width: 20%;">État actuel</th>
+                            <th style="width: 30%;">Action recommandée</th>
+                        </tr>
+                    </thead>
+                    <tbody id="eg-plugins-table-body">
+                        <!-- Rempli dynamiquement en JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Bilan du thème -->
+            <div class="eg-theme-check-box" id="eg-theme-check-box"></div>
+
+            <!-- Options de migration de domaine / URLs -->
+            <div class="eg-migration-options-box" id="eg-migration-options-box">
+                <h3><span class="dashicons dashicons-admin-links"></span> Réglages de domaine et URLs (Migration)</h3>
+                <p class="description">Si vous restaurez sur un nouveau nom de domaine ou en local, les adresses seront automatiquement adaptées dans toute la base de données (avec respect des données sérialisées).</p>
+                <div class="eg-form-row">
+                    <label>
+                        <strong>URL source (sauvegarde) :</strong>
+                        <input type="text" id="eg-replace-old-url" class="regular-text" readonly />
+                    </label>
+                    <label>
+                        <strong>Nouvelle URL cible :</strong>
+                        <input type="text" id="eg-replace-new-url" class="regular-text" value="<?php echo esc_attr(get_option('siteurl')); ?>" />
+                    </label>
+                </div>
             </div>
         </div>
 
@@ -110,11 +118,11 @@ if (!defined('ABSPATH')) {
     <!-- Étape 3 : Progression de la restauration en direct -->
     <div class="eg-card" id="eg-restore-progress-card" style="display: none;">
         <h2><span class="dashicons dashicons-clock"></span> Restauration en cours...</h2>
-        <div class="eg-notice-warning inline">
+        <div class="eg-notice-warning inline" id="eg-restore-maint-notice">
             <p><strong>Mode maintenance actif :</strong> Votre site est temporairement mis en maintenance le temps d'appliquer les changements. Ne fermez pas cette page.</p>
         </div>
 
-        <div class="eg-steps-indicator">
+        <div class="eg-steps-indicator" id="eg-restore-steps-indicator">
             <div class="eg-step" id="rstep-extract"><span class="step-num">1</span> Décompression</div>
             <div class="eg-step" id="rstep-db"><span class="step-num">2</span> Import BDD</div>
             <div class="eg-step" id="rstep-replace"><span class="step-num">3</span> URLs & Liens</div>
@@ -132,7 +140,18 @@ if (!defined('ABSPATH')) {
 
         <div id="eg-restore-success-box" class="eg-success-box" style="display: none;">
             <h3><span class="dashicons dashicons-yes-alt"></span> Restauration terminée avec succès !</h3>
-            <p>Toutes les données, configurations de plugins et fichiers choisis ont été réintégrés. Le mode maintenance a été automatiquement désactivé.</p>
+            <p id="eg-restore-success-desc">Toutes les données, configurations de plugins et fichiers choisis ont été réintégrés.</p>
+
+            <!-- Guide post-restauration pour la régénération des miniatures -->
+            <div id="eg-restore-thumbs-guide" class="eg-card" style="display: none; margin-top: 15px; border-left: 4px solid #3b82f6; text-align: left;">
+                <h4 style="margin-top: 0;"><span class="dashicons dashicons-format-image"></span> Régénération des miniatures recommandée</h4>
+                <p>Cette sauvegarde a été effectuée sans les miniatures pour économiser l'espace et accélérer le transfert. Pour afficher les vignettes et aperçus :</p>
+                <ul style="list-style: disc; margin-left: 20px;">
+                    <li><strong>Médiathèque WordPress :</strong> Exécutez en ligne de commande <code>wp media regenerate --yes</code> ou utilisez l'extension WordPress officielle <em>Regenerate Thumbnails</em>.</li>
+                    <li><strong>NextGEN Gallery :</strong> Rendez-vous dans <em>NextGEN Gallery > Gérer les galeries</em>, sélectionnez vos galeries et choisissez l'action groupée <em>« Créer de nouvelles miniatures »</em>.</li>
+                </ul>
+            </div>
+
             <div class="eg-success-actions">
                 <a href="<?php echo esc_url(home_url('/')); ?>" target="_blank" class="button button-primary button-large">
                     <span class="dashicons dashicons-external"></span> Voir le site en ligne

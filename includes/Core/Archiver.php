@@ -199,7 +199,7 @@ class Archiver {
     }
 
     /**
-     * Vérifie si l'utilitaire binaire zip est disponible sur le système.
+     * Vérifie si l'utilitaire binaire zip est disponible sur le système (Linux ou Windows).
      *
      * @return bool
      */
@@ -216,7 +216,8 @@ class Archiver {
 
         $output = [];
         $returnVar = -1;
-        @exec('which zip', $output, $returnVar);
+        $checkCmd = (stripos(PHP_OS, 'WIN') === 0) ? 'where zip' : 'which zip';
+        @exec($checkCmd, $output, $returnVar);
 
         return ($returnVar === 0 && !empty($output[0]));
     }
@@ -227,9 +228,11 @@ class Archiver {
      * @param string $tempDir Répertoire temporaire contenant manifest.json et database.sql.
      * @param string $zipFilePath Chemin final du fichier ZIP.
      * @param array $selectedFolders Liste des dossiers relatifs à WP_CONTENT_DIR.
+     * @param bool $excludeThumbs Si vrai, ignore les vignettes générées WP et NextGEN.
+     * @param array $extraExcludes Règles d'exclusions supplémentaires (ex: provenant de hooks).
      * @return bool
      */
-    public static function archiveWithCliZip($tempDir, $zipFilePath, array $selectedFolders) {
+    public static function archiveWithCliZip($tempDir, $zipFilePath, array $selectedFolders, $excludeThumbs = false, array $extraExcludes = []) {
         $contentDir = wp_normalize_path(WP_CONTENT_DIR);
         $tempFilesSymlink = $tempDir . 'files';
 
@@ -242,9 +245,16 @@ class Archiver {
             return false;
         }
 
-        // Ajout des fichiers manifest et base de données à la racine du ZIP.
-        $cmdBase = "cd " . escapeshellarg($tempDir) . " && zip -q -0 " . escapeshellarg($zipFilePath) . " manifest.json database.sql";
-        @exec($cmdBase, $outBase, $retBase);
+        // Ajout des fichiers à la racine du ZIP (manifest, settings, db éventuelle).
+        $rootFiles = [];
+        if (file_exists($tempDir . 'manifest.json')) $rootFiles[] = 'manifest.json';
+        if (file_exists($tempDir . 'database.sql')) $rootFiles[] = 'database.sql';
+        if (file_exists($tempDir . 'theme_settings.json')) $rootFiles[] = 'theme_settings.json';
+
+        if (!empty($rootFiles)) {
+            $cmdBase = "cd " . escapeshellarg($tempDir) . " && zip -q -0 " . escapeshellarg($zipFilePath) . " " . implode(' ', $rootFiles);
+            @exec($cmdBase, $outBase, $retBase);
+        }
 
         // Ajout des dossiers sélectionnés sous le préfixe files/.
         $targetPaths = [];
@@ -256,10 +266,31 @@ class Archiver {
         }
 
         if (!empty($targetPaths)) {
-            $excludePatterns = '-x "files/*cache/*" "files/*wpcache/*" "files/*et-cache/*" "files/*eg-backup-*"'
-                . ' "files/*node_modules/*" "files/*.git/*" "files/*.svn/*"';
+            $excludes = [
+                '"files/*cache/*"',
+                '"files/*wpcache/*"',
+                '"files/*et-cache/*"',
+                '"files/*eg-backup-*"',
+                '"files/*node_modules/*"',
+                '"files/*.git/*"',
+                '"files/*.svn/*"',
+            ];
+
+            if ($excludeThumbs) {
+                $excludes[] = '"*-[0-9]*x[0-9]*.*"';
+                $excludes[] = '"*-scaled.*"';
+                $excludes[] = '"*/thumbs/*"';
+                $excludes[] = '"*thumbs_*"';
+                $excludes[] = '"*/dynamic/*"';
+            }
+
+            foreach ($extraExcludes as $ex) {
+                $excludes[] = escapeshellarg("files/*" . trim($ex, '/') . "*");
+            }
+
+            $excludeClause = '-x ' . implode(' ', $excludes);
             $cmdFiles = "cd " . escapeshellarg($tempDir) . " && zip -q -r -0 " . escapeshellarg($zipFilePath)
-                . " " . implode(' ', $targetPaths) . " " . $excludePatterns;
+                . " " . implode(' ', $targetPaths) . " " . $excludeClause;
             @exec($cmdFiles, $outFiles, $retFiles);
         }
 

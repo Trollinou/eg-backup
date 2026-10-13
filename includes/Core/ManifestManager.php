@@ -90,21 +90,29 @@ class ManifestManager {
             'uploads_basedir' => wp_upload_dir()['basedir'] ?? '',
         ];
 
+        $backupType = $extraData['backup_type'] ?? 'full';
+        $hasDatabase = !empty($extraData['tables_included']);
+
         $manifest = [
-            'generator'       => 'EG Backup & Restore',
-            'plugin_version'  => defined('EG_BACKUP_VERSION') ? EG_BACKUP_VERSION : '1.0.0',
-            'created_at'      => current_time('mysql'),
-            'timestamp'       => time(),
-            'site'            => [
+            'generator'            => 'EG Backup & Restore',
+            'plugin_version'       => defined('EG_BACKUP_VERSION') ? EG_BACKUP_VERSION : '1.0.0',
+            'backup_type'          => $backupType, // 'core', 'media', 'full'
+            'created_at'           => current_time('mysql'),
+            'timestamp'            => time(),
+            'site'                 => [
                 'name'        => get_bloginfo('name'),
                 'description' => get_bloginfo('description'),
             ],
-            'environment'     => $wpInfo,
-            'plugins'         => $pluginsManifest,
-            'theme'           => $themeManifest,
-            'files_included'  => $extraData['files_included'] ?? [],
-            'tables_included' => $extraData['tables_included'] ?? [],
-            'database_file'   => 'database.sql',
+            'environment'          => $wpInfo,
+            'plugins'              => $pluginsManifest,
+            'theme'                => $themeManifest,
+            'files_included'       => $extraData['files_included'] ?? [],
+            'registered_locations' => $extraData['registered_locations'] ?? [],
+            'tables_included'      => $extraData['tables_included'] ?? [],
+            'database_file'        => $hasDatabase ? 'database.sql' : null,
+            'media_options'        => [
+                'thumbs_excluded' => !empty($extraData['thumbs_excluded']),
+            ],
         ];
 
         return $manifest;
@@ -227,7 +235,16 @@ class ManifestManager {
             'current_wp_version'=> get_bloginfo('version'),
         ];
 
+        $backupType = $manifest['backup_type'] ?? (!empty($manifest['tables_included']) ? 'full' : 'media');
+        $isMediaOnly = ($backupType === 'media');
+        $thumbsExcluded = !empty($manifest['media_options']['thumbs_excluded']);
+        $registeredLocations = $manifest['registered_locations'] ?? [];
+
         return [
+            'backup_type'          => $backupType,
+            'is_media_only'        => $isMediaOnly,
+            'thumbs_excluded'      => $thumbsExcluded,
+            'registered_locations' => $registeredLocations,
             'plugins'              => $pluginsReport,
             'theme'                => $themeReport,
             'environment'          => $envReport,
