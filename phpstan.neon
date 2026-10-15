@@ -1,0 +1,21 @@
+parameters:
+    level: 2
+    paths:
+        - eg-backup.php
+        - includes
+    bootstrapFiles:
+        - tests/bootstrap.php
+    scanFiles:
+        - vendor/php-stubs/wordpress-stubs/wordpress-stubs.php
+        - vendor/php-stubs/wp-cli-stubs/wp-cli-stubs.php
+    excludePaths:
+        - vendor
+        - node_modules
+        - assets
+        - includes/Admin/Views
+    treatPhpDocTypesAsCertain: false
+    reportUnmatchedIgnoredErrors: false
+    ignoreErrors:
+        - '#Path in require_once\(\)#'
+        - '#class cli\\progress\\Bar#'
+        - '#Cannot access property \$download_link on array\|object#'

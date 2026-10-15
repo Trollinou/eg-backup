@@ -1,0 +1,91 @@
+name: QA
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # =========================================================================
+  # 1. Job PHP : Analyse statique, style de code et tests unitaires (PHP 8.4)
+  # =========================================================================
+  php:
+    name: PHP Quality & Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          # Extensions légères indispensables uniquement (imagick banni)
+          extensions: dom, curl, libxml, mbstring, zip, gd
+          coverage: none
+          tools: composer:v2
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json', '**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install Composer dependencies
+        run: |
+          if [ -f composer.lock ]; then
+            composer install --prefer-dist --no-progress --no-interaction
+          else
+            composer update --prefer-dist --no-progress --no-interaction
+          fi
+
+      - name: Run PHPStan (Static Analysis)
+        run: vendor/bin/phpstan analyse --memory-limit=512M --no-progress
+
+      - name: Run PHPCS (Code Sniffer)
+        run: vendor/bin/phpcs -q
+
+      - name: Run PHPUnit (Unit Tests)
+        run: vendor/bin/phpunit --no-coverage
+
+  # =========================================================================
+  # 2. Job Front-End : Typage TypeScript et compilation de production
+  # =========================================================================
+  frontend:
+    name: Front-End Quality & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --prefer-offline --no-audit
+
+      - name: Check TypeScript types
+        run: npm run typecheck
+
+      - name: Build assets (Production)
+        run: npm run build

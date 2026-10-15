@@ -14,6 +14,10 @@
 /tsconfig.json
 /composer.json
 /composer.lock
+/phpstan.neon
+/phpcs.xml.dist
+/phpunit.xml.dist
+/tests/
 
 # Sources et scripts de développement
 /src/

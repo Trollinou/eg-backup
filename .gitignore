@@ -13,6 +13,9 @@ Thumbs.db
 .idea/
 .vscode/
 *.log
+.phpunit.cache/
+.phpcs.cache
+.phpstan.cache/
 
 # Fichiers d'environnement
 .env
