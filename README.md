@@ -2,6 +2,7 @@
 
 Plugin WordPress de sauvegarde et restauration intelligente :
 - **Export intégral de la base de données** (posts, pages, options, tables personnalisées créées par des extensions).
+- **Intégrité totale des données & structures sérialisées** : protection et assainissement automatique contre les tokens de sécurité (`placeholder_escape`) WordPress afin de préserver intacts les symboles `%` et la validité des objets PHP sérialisés.
 - **Explorateur granulaire de données hors BDD** : choix des répertoires de `wp-content` (photothèques de galeries comme NextGEN Gallery, dossiers d'uploads personnalisés, documents) avec calcul des tailles et du nombre de fichiers.
 - **Manifeste des dépendances (`manifest.json`)** : mémorise la liste exacte, la version et la provenance de chaque extension et thème.
 - **Assistant de restauration interactif** :

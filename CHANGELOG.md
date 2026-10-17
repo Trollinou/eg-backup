@@ -8,6 +8,19 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-10-17
+
+### Corrigé
+- **Préservation des symboles `%` et intégrité des données sérialisées (Placeholder Escape WordPress)** :
+  - **Exportation (`DatabaseExporter`)** : Appel systématique de `$wpdb->remove_placeholder_escape()` après `esc_sql()` lors de l'export des enregistrements. Empêche la persistance des tokens de sécurité WordPress (`{hash}` sha256 générés par `wpdb::placeholder_escape()`) dans les dumps SQL et préserve les symboles `%` (permaliens, styles CSS, URLs encodées).
+  - **Restauration (`DatabaseImporter`)** : Ajout du filtre de nettoyage `cleanPlaceholderEscape()` exécuté à la volée sur chaque instruction SQL lors de l'import par morceaux (`importSqlChunk`). Les éventuels tokens résiduels issus d'anciennes archives sont rétablis en `%` avant l'exécution MySQL, garantissant la validité de la longueur d'octets déclarée (`s:X:`) dans les structures sérialisées PHP et éliminant tout risque d'erreur fatale au démarrage de WordPress (`wp_fatal_error_handler`).
+- **Correction du pointeur d'offset en restauration WP-CLI (`BackupCommand`)** :
+  - Transmission correcte de `$offset` dans la boucle d'importation de `DatabaseImporter::importSqlChunk($sqlPath, $offset, 4194304)`, évitant le blocage à 4 Mo lors des restaurations en ligne de commande.
+
+### Ajouté
+- **Tests unitaires automatisés (`DatabaseTest`)** :
+  - Ajout d'une suite de tests PHPUnit validant le nettoyage et le rétablissement de `%` sur des requêtes SQL réelles contenant des placeholders WordPress, ainsi que la non-altération des requêtes standards.
+
 ## [1.0.5] - 2026-10-13
 
 ## [1.0.4] - 2026-10-13
