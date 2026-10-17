@@ -11,6 +11,7 @@ Plugin WordPress de sauvegarde et restauration intelligente :
   - Outil de *Search & Replace* (compatible avec les données sérialisées PHP) pour la migration vers un nouveau nom de domaine ou un environnement local/staging.
   - Activation automatique du mode maintenance pendant l'opération.
 - **Zéro timeout serveur** : exécution par micro-lots via requêtes AJAX successives avec barre de progression et console en temps réel.
+- **Purge et gestion intelligente des fichiers temporaires** : Garbage Collector opportuniste, annulation immédiate sur incident et tâche de fond WP-Cron quotidienne éliminant les répertoires de travail orphelins (`job_*`, `restore_*`) vieux de plus de 2 heures.
 - **Commandes WP-CLI** incluses pour les serveurs et tâches automatisées.
 
 ---
@@ -134,4 +135,7 @@ wp eg-backup inspect backup_2026-10-12_14-30-00.zip
 
 # Restaurer une archive avec Search & Replace de domaine
 wp eg-backup restore backup_2026-10-12_14-30-00.zip --search=https://ancien-site.com --replace=https://nouveau-site.local
+
+# Purger les répertoires temporaires orphelins (> 2h ou âge personnalisé en secondes)
+wp eg-backup purge-temp --max-age=7200
 ```

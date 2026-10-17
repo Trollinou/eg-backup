@@ -42,6 +42,16 @@ if ( fs.existsSync( mainPhpPath ) ) {
 	updatedCount++;
 }
 
+// 1b. Update tests/bootstrap.php
+const testBootstrapPath = path.join( rootDir, 'tests', 'bootstrap.php' );
+if ( fs.existsSync( testBootstrapPath ) ) {
+	let testContent = fs.readFileSync( testBootstrapPath, 'utf8' );
+	testContent = testContent.replace( /(define\(\s*'EG_BACKUP_VERSION',\s*')([^']+)('\s*\);)/, `$1${ newVersion }$3` );
+	fs.writeFileSync( testBootstrapPath, testContent, 'utf8' );
+	console.log( `  ✓ Updated tests/bootstrap.php (EG_BACKUP_VERSION)` );
+	updatedCount++;
+}
+
 // 2. Update package.json
 if ( fs.existsSync( packageJsonPath ) ) {
 	const pkg = JSON.parse( fs.readFileSync( packageJsonPath, 'utf8' ) );

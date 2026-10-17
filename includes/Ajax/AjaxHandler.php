@@ -28,6 +28,7 @@ class AjaxHandler {
             'eg_backup_poll_cli',
             'eg_backup_step_files',
             'eg_backup_finalize',
+            'eg_backup_cancel',
             'eg_backup_delete',
             'eg_restore_inspect',
             'eg_restore_install_plugin',
@@ -111,6 +112,9 @@ class AjaxHandler {
             }
             $selectedFolders = array_values(array_unique($selectedFolders));
         }
+
+        // Purge préventive des dossiers temporaires orphelins ou expirés.
+        Archiver::purgeOldTempDirectories();
 
         $jobId = 'job_' . wp_date('Ymd_His') . '_' . wp_generate_password(6, false);
         $tempDir = Archiver::getTempDir() . $jobId . '/';
@@ -520,6 +524,21 @@ class AjaxHandler {
     }
 
     /**
+     * Annule la sauvegarde en cours et nettoie immédiatement son dossier temporaire.
+     */
+    public function eg_backup_cancel() {
+        $this->verifySecurity();
+
+        $jobId = sanitize_text_field($_POST['job_id'] ?? '');
+        if ($jobId) {
+            $tempDir = Archiver::getTempDir() . $jobId . '/';
+            Archiver::cleanDirectory($tempDir);
+        }
+
+        wp_send_json_success(['message' => 'Sauvegarde annulée et dossier temporaire nettoyé.']);
+    }
+
+    /**
      * Suppression d'une archive de sauvegarde.
      */
     public function eg_backup_delete() {
@@ -532,6 +551,8 @@ class AjaxHandler {
 
         $deleted = Archiver::deleteBackup($filename);
         if ($deleted) {
+            // Nettoyage opportuniste des dossiers temporaires orphelins.
+            Archiver::purgeOldTempDirectories();
             wp_send_json_success(['message' => 'Sauvegarde supprimée avec succès.']);
         } else {
             wp_send_json_error(['message' => 'Impossible de supprimer cette sauvegarde.']);
@@ -632,6 +653,9 @@ class AjaxHandler {
         if (!file_exists($zipPath)) {
             wp_send_json_error(['message' => 'Archive introuvable.']);
         }
+
+        // Purge préventive des dossiers temporaires orphelins ou expirés.
+        Archiver::purgeOldTempDirectories();
 
         $jobId = 'restore_' . wp_date('Ymd_His') . '_' . wp_generate_password(6, false);
         $tempDir = Archiver::getTempDir() . $jobId . '/';

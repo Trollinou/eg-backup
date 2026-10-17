@@ -3,7 +3,7 @@
  * Plugin Name: EG Backup & Restore
  * Plugin URI: https://github.com/eg-backup/eg-backup
  * Description: Sauvegarde et restauration intelligente de WordPress : base de données complète, sélection granulaire des données de plugins hors BDD, manifeste des dépendances (plugins/thèmes) et assistant de restauration interactif.
- * Version: 1.0.6
+ * Version: 1.0.7
  * Author: Etienne Gagnon
  * Author URI: https://github.com/Trollinou
  * License: GPL-2.0+
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Définition des constantes du plugin.
-define('EG_BACKUP_VERSION', '1.0.6');
+define('EG_BACKUP_VERSION', '1.0.7');
 define('EG_BACKUP_PLUGIN_FILE', __FILE__);
 define('EG_BACKUP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('EG_BACKUP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -50,6 +50,9 @@ function eg_backup_init() {
         $ajax->init();
     }
 
+    // Tâche planifiée WP-Cron pour la purge automatique des dossiers temporaires orphelins.
+    add_action('eg_backup_cleanup_temp_event', ['\\EGBackup\\Core\\Archiver', 'purgeOldTempDirectories']);
+
     // Intégration WP-CLI si disponible.
     if (defined('WP_CLI') && WP_CLI) {
         BackupCommand::register();
@@ -58,9 +61,20 @@ function eg_backup_init() {
 add_action('plugins_loaded', 'eg_backup_init');
 
 /**
- * Hook d'activation : sécurisation du dossier de stockage des sauvegardes.
+ * Hook d'activation : sécurisation du stockage et planification du nettoyage automatique.
  */
 register_activation_hook(__FILE__, function() {
     require_once EG_BACKUP_PLUGIN_DIR . 'includes/Core/Archiver.php';
     \EGBackup\Core\Archiver::ensureStorageDirectory();
+
+    if (!wp_next_scheduled('eg_backup_cleanup_temp_event')) {
+        wp_schedule_event(time(), 'daily', 'eg_backup_cleanup_temp_event');
+    }
+});
+
+/**
+ * Hook de désactivation : suppression de la tâche planifiée de nettoyage.
+ */
+register_deactivation_hook(__FILE__, function() {
+    wp_clear_scheduled_hook('eg_backup_cleanup_temp_event');
 });

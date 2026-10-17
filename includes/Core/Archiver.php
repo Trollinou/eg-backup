@@ -52,7 +52,7 @@ class Archiver {
             file_put_contents($indexFile, '<!DOCTYPE html><html><head><title>403 Forbidden</title></head><body><h1>Directory access is forbidden.</h1></body></html>');
         }
 
-        // Fichier .htaccess pour Apache
+        // Fichier .htaccess pour Apache.
         $htaccessFile = $storageDir . '.htaccess';
         if (!file_exists($htaccessFile)) {
             $rules = "# EG Backup & Restore - Protection des archives\n";
@@ -60,6 +60,15 @@ class Archiver {
             $rules .= "<IfModule !mod_authz_core.c>\n    Order deny,allow\n    Deny from all\n</IfModule>\n";
             file_put_contents($htaccessFile, $rules);
         }
+
+        // Fichier index.html vide dans le dossier temporaire.
+        $tempIndexFile = $tempDir . 'index.html';
+        if (!file_exists($tempIndexFile)) {
+            file_put_contents($tempIndexFile, '<!DOCTYPE html><html><head><title>403 Forbidden</title></head><body><h1>Directory access is forbidden.</h1></body></html>');
+        }
+
+        // Nettoyage opportuniste des dossiers de travail temporaires expirés (plus de 2h).
+        self::purgeOldTempDirectories();
 
         return is_dir($storageDir) && is_writable($storageDir);
     }
@@ -681,22 +690,93 @@ class Archiver {
     /**
      * Nettoie récursivement un dossier de travail temporaire.
      *
-     * @param string $dir
+     * @param string $dir Chemin absolu du dossier à nettoyer.
+     * @return bool
      */
     public static function cleanDirectory($dir) {
-        if (!is_dir($dir)) {
-            return;
+        $cleanDir = rtrim($dir, '/\\');
+        if (!is_dir($cleanDir)) {
+            return false;
         }
 
-        $files = array_diff(scandir($dir), ['.', '..']);
+        $items = scandir($cleanDir);
+        if ($items === false) {
+            return false;
+        }
+
+        $files = array_diff($items, ['.', '..']);
         foreach ($files as $file) {
-            $path = "$dir/$file";
-            if (is_dir($path)) {
+            $path = $cleanDir . DIRECTORY_SEPARATOR . $file;
+            if (is_link($path)) {
+                @unlink($path);
+            } elseif (is_dir($path)) {
                 self::cleanDirectory($path);
             } else {
                 @unlink($path);
             }
         }
-        @rmdir($dir);
+
+        return @rmdir($cleanDir);
+    }
+
+    /**
+     * Purge les dossiers temporaires orphelins ou expirés dans le dossier temp.
+     *
+     * @param int $maxAgeSeconds Âge maximal en secondes avant purge (défaut : 2 heures).
+     * @return int Nombre de dossiers purgés.
+     */
+    public static function purgeOldTempDirectories($maxAgeSeconds = 7200) {
+        $tempBase = rtrim(self::getTempDir(), '/\\');
+        if (!is_dir($tempBase)) {
+            return 0;
+        }
+
+        $items = scandir($tempBase);
+        if ($items === false) {
+            return 0;
+        }
+
+        $now = time();
+        $purgedCount = 0;
+
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..' || $item === 'index.html' || $item === '.htaccess') {
+                continue;
+            }
+
+            $itemPath = $tempBase . DIRECTORY_SEPARATOR . $item;
+
+            // Fichiers et liens symboliques orphelins directs à la racine de temp/.
+            if (is_link($itemPath)) {
+                @unlink($itemPath);
+                continue;
+            }
+
+            if (!is_dir($itemPath)) {
+                $mtime = filemtime($itemPath);
+                if ($mtime !== false && ($now - $mtime) > $maxAgeSeconds) {
+                    @unlink($itemPath);
+                }
+                continue;
+            }
+
+            // Dossiers de travail (ex: job_xxxx).
+            $mtime = filemtime($itemPath);
+            $stateFile = $itemPath . DIRECTORY_SEPARATOR . 'state.json';
+            if (file_exists($stateFile)) {
+                $stateMtime = filemtime($stateFile);
+                if ($stateMtime !== false && $stateMtime > $mtime) {
+                    $mtime = $stateMtime;
+                }
+            }
+
+            if ($mtime !== false && ($now - $mtime) > $maxAgeSeconds) {
+                if (self::cleanDirectory($itemPath)) {
+                    $purgedCount++;
+                }
+            }
+        }
+
+        return $purgedCount;
     }
 }

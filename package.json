@@ -1,6 +1,6 @@
 {
   "name": "eg-backup",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Sauvegarde et restauration intelligente de configuration et données WordPress sous forme d'extension.",
   "main": "eg-backup.php",
   "scripts": {

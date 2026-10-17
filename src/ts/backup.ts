@@ -37,6 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let currentBackupType = 'core';
     let cachedCategorizedData: any = null;
+    let currentJobId: string | null = null;
 
     // Changement de type de sauvegarde
     typeCards.forEach(card => {
@@ -396,6 +397,7 @@ document.addEventListener('DOMContentLoaded', () => {
         logMessage('info', `Démarrage de la sauvegarde [Type : ${currentBackupType.toUpperCase()}]...`);
         updateProgress(5, 'Initialisation du travail...');
         activateStep('step-init');
+        currentJobId = null;
 
         // Étape 1 : Start
         try {
@@ -418,6 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const { job_id: jobId, total_tables: totalTables, skip_db: skipDb } = response.data;
+            currentJobId = jobId;
             markStepDone('step-init');
 
             if (skipDb) {
@@ -746,6 +749,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const data = response.data;
+            currentJobId = null;
             updateProgress(100, 'Sauvegarde terminée !');
             markStepDone('step-manifest');
             logMessage('success', `Archive ZIP créée : ${data.filename} (${data.size_human})`);
@@ -821,6 +825,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (startBackupBtn) {
             startBackupBtn.disabled = false;
             startBackupBtn.classList.remove('updating-message');
+        }
+
+        // Nettoyage immédiat du dossier temporaire orphelin si le travail a échoué.
+        if (currentJobId) {
+            const failedJobId = currentJobId;
+            currentJobId = null;
+            wpAjax(ajaxUrl, {
+                action: 'eg_backup_cancel',
+                nonce,
+                job_id: failedJobId,
+            }).catch(() => {
+                // Ignore silencieusement en cas d'échec de communication.
+            });
         }
     }
 });

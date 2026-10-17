@@ -8,6 +8,25 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-10-17
+
+### Ajouté
+- **Purge automatique & Garbage Collector des dossiers de travail temporaires (`Archiver::purgeOldTempDirectories`)** :
+  - Détection et suppression récursive automatique des dossiers temporaires de travail orphelins (`temp/job_*`, `temp/restore_*`) et fichiers résiduels dont la dernière activité remonte à plus de 2 heures.
+  - Exécution opportuniste lors de la consultation des sauvegardes, de la suppression d'une archive, ainsi qu'au démarrage d'une nouvelle sauvegarde ou restauration.
+  - Planification d'une tâche de fond quotidienne WP-Cron (`eg_backup_cleanup_temp_event`) avec désinscription propre lors de la désactivation du plugin.
+- **Annulation et nettoyage immédiat en cas d'erreur (`eg_backup_cancel`)** :
+  - Émission automatique d'une requête AJAX d'annulation dès qu'une erreur ou une interruption intervient côté client, détruisant immédiatement le dossier temporaire du job en cours sans attendre le délai d'expiration de 2h.
+- **Commande WP-CLI `wp eg-backup purge-temp`** :
+  - Commande d'administration permettant de purger manuellement les dossiers temporaires orphelins avec paramètre d'âge `--max-age=<secondes>`.
+- **Tests unitaires (`ArchiverTest`)** :
+  - Couverture automatisée des fonctions `cleanDirectory` (gestion des sous-dossiers, fichiers et symlinks) et `purgeOldTempDirectories` (préservation des jobs récents et suppression sélective des jobs expirés).
+
+### Amélioré
+- **Sécurisation de `Archiver::cleanDirectory`** :
+  - Prise en charge stricte des liens symboliques (`is_link` vérifié avant `is_dir`) pour prévenir toute traversée intempestive ou blocage de suppression (`rmdir`).
+  - Normalisation des chemins avec `rtrim()` pour éliminer tout risque de double séparateur de répertoire.
+
 ## [1.0.6] - 2026-10-17
 
 ### Corrigé

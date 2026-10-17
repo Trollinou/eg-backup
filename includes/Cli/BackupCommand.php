@@ -29,6 +29,7 @@ class BackupCommand {
         \WP_CLI::add_command('eg-backup list', [__CLASS__, 'listBackups']);
         \WP_CLI::add_command('eg-backup inspect', [__CLASS__, 'inspect']);
         \WP_CLI::add_command('eg-backup restore', [__CLASS__, 'restore']);
+        \WP_CLI::add_command('eg-backup purge-temp', [__CLASS__, 'purgeTemp']);
     }
 
     /**
@@ -40,6 +41,7 @@ class BackupCommand {
         \WP_CLI::line("  wp eg-backup create [--type=core|media|full] [--no-thumbs] [--folders=<f>] [--include-locations=<l>]");
         \WP_CLI::line("  wp eg-backup inspect <filename>       - Inspecte le manifeste");
         \WP_CLI::line("  wp eg-backup restore <filename>       - Restaure une sauvegarde");
+        \WP_CLI::line("  wp eg-backup purge-temp [--max-age=<sec>] - Purge les dossiers temporaires orphelins");
     }
 
     /**
@@ -363,5 +365,20 @@ class BackupCommand {
             }
         }
         closedir($dir);
+    }
+
+    /**
+     * Purge les dossiers et fichiers temporaires orphelins.
+     *
+     * ## OPTIONS
+     *
+     * [--max-age=<seconds>]
+     * : Âge minimal en secondes avant purge (par défaut : 7200, soit 2h).
+     */
+    public static function purgeTemp($args, $assocArgs) {
+        $maxAge = isset($assocArgs['max-age']) ? (int) $assocArgs['max-age'] : 7200;
+        \WP_CLI::line("Purge des dossiers temporaires orphelins (âge > {$maxAge}s)...");
+        $purged = Archiver::purgeOldTempDirectories($maxAge);
+        \WP_CLI::success(sprintf('%d dossier(s) temporaire(s) purgé(s).', $purged));
     }
 }

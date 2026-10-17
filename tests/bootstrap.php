@@ -28,7 +28,7 @@ if (!defined('OBJECT_K')) {
     define('OBJECT_K', 'OBJECT_K');
 }
 if (!defined('EG_BACKUP_VERSION')) {
-    define('EG_BACKUP_VERSION', '1.0.6');
+    define('EG_BACKUP_VERSION', '1.0.7');
 }
 if (!defined('EG_BACKUP_PLUGIN_FILE')) {
     define('EG_BACKUP_PLUGIN_FILE', dirname(__DIR__) . '/eg-backup.php');
@@ -52,4 +52,30 @@ if (file_exists(dirname(__DIR__) . '/vendor/autoload.php')) {
 } else {
     require_once dirname(__DIR__) . '/includes/Autoloader.php';
     \EGBackup\Autoloader::register();
+}
+
+// Définition des fonctions WordPress courantes si absentes lors des tests unitaires.
+if (!function_exists('trailingslashit')) {
+    function trailingslashit($string) {
+        return rtrim((string) $string, '/\\') . '/';
+    }
+}
+if (!function_exists('untrailingslashit')) {
+    function untrailingslashit($string) {
+        return rtrim((string) $string, '/\\');
+    }
+}
+if (!function_exists('wp_normalize_path')) {
+    function wp_normalize_path($path) {
+        $path = str_replace('\\', '/', (string) $path);
+        return (string) preg_replace('|(?<=.)/+|', '/', $path);
+    }
+}
+if (!function_exists('wp_upload_dir')) {
+    function wp_upload_dir() {
+        return [
+            'basedir' => sys_get_temp_dir() . '/eg_backup_test_uploads',
+            'baseurl' => 'https://example.com/wp-content/uploads',
+        ];
+    }
 }
