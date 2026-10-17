@@ -124,6 +124,10 @@ class DatabaseExporter {
                     $values[] = $val;
                 } else {
                     $escapedVal = esc_sql($val);
+                    if (method_exists($wpdb, 'remove_placeholder_escape')) {
+                        // Nettoie le placeholder temporaire de sécurité WordPress pour préserver les symboles '%' dans l'archive SQL.
+                        $escapedVal = $wpdb->remove_placeholder_escape($escapedVal);
+                    }
                     $escapedVal = str_replace(["\r", "\n"], ['\r', '\n'], $escapedVal);
                     $values[] = "'" . $escapedVal . "'";
                 }

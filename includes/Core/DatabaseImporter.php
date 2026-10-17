@@ -81,6 +81,7 @@ class DatabaseImporter {
                         // Fin réelle d'une instruction SQL hors d'une chaîne.
                         $cleanQuery = trim($currentQuery);
                         if (!empty($cleanQuery)) {
+                            $cleanQuery = self::cleanPlaceholderEscape($cleanQuery);
                             $wpdb->query($cleanQuery);
                             $queriesCount++;
                         }
@@ -101,6 +102,7 @@ class DatabaseImporter {
         // Exécution de toute requête résiduelle avant la fin de fichier.
         $cleanQuery = trim($currentQuery);
         if (!empty($cleanQuery)) {
+            $cleanQuery = self::cleanPlaceholderEscape($cleanQuery);
             $wpdb->query($cleanQuery);
             $queriesCount++;
             $currentQuery = '';
@@ -305,5 +307,19 @@ class DatabaseImporter {
         }
 
         return $textCols;
+    }
+
+    /**
+     * Nettoie les éventuels tokens d'échappement WordPress ({hash}) résiduels d'un export défaillant
+     * et les rétablit en symbole '%'.
+     *
+     * @param string $query Requête SQL à assainir.
+     * @return string Requête nettoyée.
+     */
+    public static function cleanPlaceholderEscape($query) {
+        if (strpos($query, '{') !== false && preg_match('/\{[a-f0-9]{64}\}|\{[a-f0-9]{32}\}/i', $query)) {
+            return (string) preg_replace('/\{[a-f0-9]{64}\}|\{[a-f0-9]{32}\}/i', '%', $query);
+        }
+        return $query;
     }
 }

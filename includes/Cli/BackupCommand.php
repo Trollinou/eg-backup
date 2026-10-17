@@ -291,7 +291,7 @@ class BackupCommand {
             \WP_CLI::line("Importation de la base de données...");
             $offset = 0;
             while (true) {
-                $res = DatabaseImporter::importSqlChunk($sqlPath, 4194304);
+                $res = DatabaseImporter::importSqlChunk($sqlPath, $offset, 4194304);
                 if (isset($res['error'])) {
                     MaintenanceMode::disable();
                     \WP_CLI::error($res['error']);
