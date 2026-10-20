@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "bmewburn.vscode-intelephense-client",
+    "valeryanm.vscode-phpsab",
+    "SanderRonde.phpstan-vscode",
+    "dbaeumer.vscode-eslint",
+    "recca0120.vscode-phpunit",
+    "mrmlnc.vscode-scss"
+  ]
+}
