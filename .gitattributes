@@ -1,0 +1,67 @@
+# Auto-detect text files and normalize line endings to LF on commit
+* text=auto eol=lf
+
+# Explicit text files
+*.php text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.cjs text eol=lf
+*.mjs text eol=lf
+*.vue text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.css text eol=lf
+*.scss text eol=lf
+*.html text eol=lf
+*.neon text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.xml text eol=lf
+*.svg text eol=lf
+*.sql text eol=lf
+
+# Fichers de configuration
+.gitignore text eol=lf
+.gitattributes text eol=lf
+.eslintrc.json text eol=lf
+.editorconfig text eol=lf
+.distignore text eol=lf
+.htaccess text eol=lf
+.browserlistrc text eol=lf
+.geminirc text eol=lf
+.prettierrc text eol=lf
+.prettierignore text eol=lf
+.npmignore text eol=lf
+*.env.* text eol=lf
+
+# Fichiers de templates/dist et locks
+*.dist text eol=lf
+*.lock text eol=lf
+
+# Fichiers de jeux échiquéens
+*.pgn text eol=lf
+*.fen text eol=lf
+
+# Scripts shell Unix (en miroir de *.bat/*.cmd/*.ps1)
+*.sh text eol=lf
+
+# Exceptions : scripts spécifiques à Windows qui exigent du CRLF pour s'exécuter
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files (do not touch line endings)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.wasm binary
+*.zip binary
+*.tar.gz binary
