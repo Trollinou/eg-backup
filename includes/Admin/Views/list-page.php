@@ -98,7 +98,7 @@ foreach ($backups as $b) {
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <a href="<?php echo esc_url($downloadUrl); ?>" class="button button-small" title="Télécharger le fichier ZIP">
+                                <a href="<?php echo esc_url($downloadUrl); ?>" class="button button-small eg-btn-download-backup" data-filename="<?php echo esc_attr($backup['filename']); ?>" data-size="<?php echo esc_attr((string) $backup['size']); ?>" title="Télécharger le fichier ZIP">
                                     <span class="dashicons dashicons-download"></span> Télécharger
                                 </a>
                                 <a href="<?php echo esc_url($restoreUrl); ?>" class="button button-small button-primary" title="Lancer l'assistant de restauration">

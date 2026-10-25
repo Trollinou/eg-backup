@@ -8,6 +8,14 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-10-25
+
+### Corrigé
+- **Coupure réseau à 537 Mo et dépassement mémoire lors du téléchargement d'archives volumineuses (> 500 Mo / 1 Go)** :
+  - **Téléchargement segmenté côté navigateur par tranches de 64 Mo (`downloadBackupByChunks` & `Archiver::streamFileChunk`)** : Pour franchir le plafond matériel de 512 MiB (~537,5 Mo) imposé par les proxys frontaux d'hébergeurs (o2switch / TigerProtect / Cloudflare) sur toute réponse HTTP unique, le client TypeScript découpe automatiquement le téléchargement en requêtes successives de 64 Mo (`chunk_start` / `chunk_end`) avec reprise automatique (3 tentatives par tronçon), suivi du pourcentage en direct sur le bouton, assemblage `Blob` zéro-copie et enregistrement local instantané.
+  - **Téléchargement statique direct sécurisé par token éphémère (`Archiver::prepareDirectDownloadUrl`)** : Pour les accès hors JS, création d'un lien physique (`hardlink`, 0 octet disque supplémentaire) dans un sous-dossier à jeton cryptographique aléatoire de 48 caractères (`eg-backup-data/dl/<token>/`) purgé automatiquement après 1 heure.
+  - **Fallback de streaming binaire par morceaux (`Archiver::streamFileToOutput`)** : Diffusion séquentielle par paquets de 1 Mo avec support `HTTP Range` (206 Partial Content), en-têtes `X-LiteSpeed-Buffer: no` / `X-Accel-Buffering: no`, désactivation de `zlib.output_compression` et vidage des tampons de sortie (`ob_end_clean`).
+
 ## [1.0.7] - 2026-10-17
 
 ### Ajouté

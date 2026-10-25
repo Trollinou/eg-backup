@@ -2,7 +2,7 @@
  * Gestion du scan de fichiers et du processus d'exportation de sauvegarde modulaire (Vanilla TypeScript).
  */
 
-import { $, $$, escapeHtml, wpAjax, extractErrorMessage } from './_common';
+import { $, $$, escapeHtml, wpAjax, extractErrorMessage, downloadBackupByChunks } from './_common';
 
 document.addEventListener('DOMContentLoaded', () => {
     if (typeof egBackupData === 'undefined') {
@@ -95,6 +95,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Clic sur "Actualiser l'inventaire"
     scanBtn?.addEventListener('click', () => {
         loadDirectoryTree();
+    });
+
+    // Clic sur "Télécharger l'archive ZIP" (téléchargement segmenté par tranches de 64 Mo)
+    downloadLink?.addEventListener('click', async (e: Event) => {
+        const href = downloadLink.getAttribute('href') || '';
+        const filename = downloadLink.getAttribute('data-filename') || '';
+        const size = parseInt(downloadLink.getAttribute('data-size') || '0', 10);
+        if (!href || href === '#' || !filename) return;
+
+        e.preventDefault();
+        await downloadBackupByChunks(href, filename, size, downloadLink);
     });
 
     // Écouteur sur la case exclusion miniatures pour recalculer les badges
@@ -734,6 +745,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await wpAjax<{
                 filename: string;
+                size?: number;
                 size_human: string;
                 download_url?: string;
                 message?: string;
@@ -766,6 +778,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (downloadLink) {
                 downloadLink.href = fileDownloadUrl;
+                downloadLink.setAttribute('data-filename', data.filename);
+                downloadLink.setAttribute('data-size', String(data.size || 0));
             }
 
             if (successBox) {

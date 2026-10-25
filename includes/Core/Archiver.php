@@ -30,6 +30,25 @@ class Archiver {
     }
 
     /**
+     * Récupère l'URL publique du dossier de stockage.
+     *
+     * @return string
+     */
+    public static function getStorageUrl() {
+        $uploadDir = wp_upload_dir();
+        return trailingslashit($uploadDir['baseurl']) . 'eg-backup-data/';
+    }
+
+    /**
+     * Récupère le chemin du dossier des liens de téléchargement éphémères.
+     *
+     * @return string
+     */
+    public static function getDownloadTempDir() {
+        return trailingslashit(self::getStorageDir()) . 'dl/';
+    }
+
+    /**
      * S'assure de l'existence et de la protection du dossier de stockage.
      *
      * @return bool
@@ -137,6 +156,9 @@ class Archiver {
         $storageDir = self::getStorageDir();
         $safeFilename = sanitize_file_name($filename);
         $filePath = $storageDir . $safeFilename;
+
+        // Purge les liens de téléchargement éphémères pour libérer l'inode disque immédiatement.
+        self::purgeOldDownloadLinks(0);
 
         if (file_exists($filePath) && strtolower(pathinfo($filePath, PATHINFO_EXTENSION)) === 'zip') {
             return unlink($filePath);
@@ -777,6 +799,341 @@ class Archiver {
             }
         }
 
+        // Purge également les liens de téléchargement éphémères expirés (plus d'1 heure).
+        $purgedCount += self::purgeOldDownloadLinks(min($maxAgeSeconds, 3600));
+
         return $purgedCount;
+    }
+
+    /**
+     * Génère une URL de téléchargement statique directe protégée par un token cryptographique éphémère.
+     * Permet au serveur web (Apache/LiteSpeed/Nginx) de servir directement le fichier ZIP depuis le disque
+     * sans passer par PHP, contournant ainsi toute coupure FastCGI/LiteSpeed à 512 Mo.
+     *
+     * @param string $filePath Chemin absolu du fichier ZIP.
+     * @return string|null URL directe ou null en cas d'impossibilité.
+     */
+    public static function prepareDirectDownloadUrl($filePath) {
+        if (!file_exists($filePath) || !is_readable($filePath)) {
+            return null;
+        }
+
+        // Nettoyage des liens éphémères expirés (plus d'1 heure).
+        self::purgeOldDownloadLinks(3600);
+
+        $dlBaseDir = self::getDownloadTempDir();
+        if (!is_dir($dlBaseDir)) {
+            wp_mkdir_p($dlBaseDir);
+        }
+
+        // Protection anti-listage du dossier dl/.
+        $indexFile = $dlBaseDir . 'index.html';
+        if (!file_exists($indexFile)) {
+            file_put_contents($indexFile, '<!DOCTYPE html><html><head><title>403 Forbidden</title></head><body><h1>Directory access is forbidden.</h1></body></html>');
+        }
+
+        // Autorisation du téléchargement statique direct par le serveur web dans dl/.
+        $htaccessFile = $dlBaseDir . '.htaccess';
+        if (!file_exists($htaccessFile)) {
+            $rules = "# EG Backup & Restore - Téléchargement statique par token éphémère\n";
+            $rules .= "<IfModule mod_authz_core.c>\n    Require all granted\n</IfModule>\n";
+            $rules .= "<IfModule !mod_authz_core.c>\n    Order allow,deny\n    Allow from all\n</IfModule>\n";
+            $rules .= "<IfModule mod_headers.c>\n    Header set Content-Disposition \"attachment\"\n</IfModule>\n";
+            file_put_contents($htaccessFile, $rules);
+        }
+
+        try {
+            $token = bin2hex(random_bytes(24));
+        } catch (\Exception $e) {
+            $token = wp_generate_password(48, false, false);
+        }
+
+        $tokenDir = $dlBaseDir . $token . '/';
+        if (!wp_mkdir_p($tokenDir)) {
+            return null;
+        }
+
+        file_put_contents($tokenDir . 'index.html', '<!DOCTYPE html><html><head><title>403 Forbidden</title></head><body><h1>Directory access is forbidden.</h1></body></html>');
+
+        $filename = basename($filePath);
+        $linkPath = $tokenDir . $filename;
+
+        // Création d'un lien physique (hardlink : 0 octet supplémentaire, instantané, servi nativement par Apache/LiteSpeed).
+        $linked = @link($filePath, $linkPath);
+        if (!$linked && function_exists('symlink')) {
+            $linked = @symlink($filePath, $linkPath);
+        }
+
+        if (!$linked || !file_exists($linkPath)) {
+            self::cleanDirectory($tokenDir);
+            return null;
+        }
+
+        if (function_exists('wp_schedule_single_event') && !wp_next_scheduled('eg_backup_cleanup_temp_event')) {
+            wp_schedule_single_event(time() + 3600, 'eg_backup_cleanup_temp_event');
+        }
+
+        return self::getStorageUrl() . 'dl/' . $token . '/' . rawurlencode($filename);
+    }
+
+    /**
+     * Purge les dossiers de téléchargement éphémères expirés dans dl/.
+     *
+     * @param int $maxAgeSeconds Âge maximal en secondes avant purge (défaut : 1 heure).
+     * @return int Nombre de dossiers purgés.
+     */
+    public static function purgeOldDownloadLinks($maxAgeSeconds = 3600) {
+        $dlBase = rtrim(self::getDownloadTempDir(), '/\\');
+        if (!is_dir($dlBase)) {
+            return 0;
+        }
+
+        $items = scandir($dlBase);
+        if ($items === false) {
+            return 0;
+        }
+
+        $now = time();
+        $purgedCount = 0;
+
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..' || $item === 'index.html' || $item === '.htaccess') {
+                continue;
+            }
+
+            $itemPath = $dlBase . DIRECTORY_SEPARATOR . $item;
+            if (!is_dir($itemPath)) {
+                continue;
+            }
+
+            $mtime = filemtime($itemPath);
+            if ($maxAgeSeconds <= 0 || ($mtime !== false && ($now - $mtime) >= $maxAgeSeconds)) {
+                if (self::cleanDirectory($itemPath)) {
+                    $purgedCount++;
+                }
+            }
+        }
+
+        return $purgedCount;
+    }
+
+    /**
+     * Diffuse une tranche précise (chunk) d'un fichier en HTTP 200 OK.
+     * Permet le téléchargement segmenté côté navigateur (Chunked Fetch) afin de ne jamais dépasser
+     * la limite de 512 Mo par réponse HTTP imposée par certains hébergeurs et proxys.
+     *
+     * @param string $filePath     Chemin absolu du fichier.
+     * @param int    $chunkStart   Octet de départ (inclus, base 0).
+     * @param int    $chunkEnd     Octet de fin (inclus, base 0).
+     * @param bool   $cleanBuffers Nettoie et ferme ou non les tampons de sortie actifs.
+     * @return bool
+     */
+    public static function streamFileChunk($filePath, $chunkStart, $chunkEnd, $cleanBuffers = true) {
+        if (!file_exists($filePath) || !is_readable($filePath)) {
+            return false;
+        }
+
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+
+        if (function_exists('ini_set')) {
+            @ini_set('memory_limit', '-1');
+            @ini_set('zlib.output_compression', 'Off');
+        }
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+        if (function_exists('apache_setenv')) {
+            @apache_setenv('no-gzip', '1');
+        }
+
+        if ($cleanBuffers) {
+            while (ob_get_level() > 0) {
+                @ob_end_clean();
+            }
+        }
+
+        $fileSize = (int) filesize($filePath);
+        if ($fileSize <= 0 || $chunkStart < 0 || $chunkStart >= $fileSize) {
+            return false;
+        }
+
+        $start = $chunkStart;
+        $end = min($chunkEnd, $fileSize - 1);
+        if ($end < $start) {
+            return false;
+        }
+
+        $length = $end - $start + 1;
+
+        if ($cleanBuffers) {
+            http_response_code(200);
+            header('X-LiteSpeed-Buffer: no');
+            header('X-Accel-Buffering: no');
+            header('Content-Type: application/octet-stream');
+            header('Content-Transfer-Encoding: binary');
+            header('Cache-Control: no-store, no-cache, must-revalidate');
+            header('Pragma: no-cache');
+            header('X-EG-Total-Size: ' . (string) $fileSize);
+            header('Content-Length: ' . (string) $length);
+        }
+
+        $handle = fopen($filePath, 'rb');
+        if ($handle === false) {
+            return false;
+        }
+
+        if ($start > 0) {
+            fseek($handle, $start);
+        }
+
+        $bufferSize = 1048576;
+        $bytesRemaining = $length;
+
+        while ($bytesRemaining > 0 && !feof($handle)) {
+            $readSize = min($bufferSize, $bytesRemaining);
+            $buffer = fread($handle, $readSize);
+            if ($buffer === false || $buffer === '') {
+                break;
+            }
+
+            echo $buffer;
+
+            if ($cleanBuffers) {
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
+                flush();
+            }
+
+            $bytesRemaining -= strlen($buffer);
+
+            if (connection_status() !== CONNECTION_NORMAL) {
+                break;
+            }
+        }
+
+        fclose($handle);
+        return true;
+    }
+
+    /**
+     * Diffuse un fichier vers la sortie HTTP par morceaux sans saturer la mémoire RAM.
+     *
+     * @param string $filePath     Chemin absolu du fichier.
+     * @param int    $chunkSize    Taille de chaque morceau en octets (par défaut : 1 Mo).
+     * @param bool   $cleanBuffers Nettoie et ferme ou non les tampons de sortie actifs.
+     * @return bool
+     */
+    public static function streamFileToOutput($filePath, $chunkSize = 1048576, $cleanBuffers = true) {
+        if (!file_exists($filePath) || !is_readable($filePath)) {
+            return false;
+        }
+
+        // 1. Libère les verrous de session pour éviter de bloquer les requêtes concurrentes.
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+
+        // 2. Désactive les limites mémoire et temps pour les gros téléchargements.
+        if (function_exists('ini_set')) {
+            @ini_set('memory_limit', '-1');
+            @ini_set('zlib.output_compression', 'Off');
+        }
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+        if (function_exists('apache_setenv')) {
+            @apache_setenv('no-gzip', '1');
+        }
+
+        // 3. Ferme et vide tous les tampons de sortie actifs avant d'envoyer les en-têtes.
+        if ($cleanBuffers) {
+            while (ob_get_level() > 0) {
+                @ob_end_clean();
+            }
+        }
+
+        $fileSize = (int) filesize($filePath);
+        $start = 0;
+        $end = $fileSize - 1;
+
+        // 4. Prise en charge des requêtes HTTP Range (reprise de téléchargement interrompu).
+        $isRange = false;
+        if (isset($_SERVER['HTTP_RANGE']) && preg_match('/bytes=\s*(\d+)-(\d*)/i', (string) $_SERVER['HTTP_RANGE'], $matches)) {
+            $start = (int) $matches[1];
+            if (!empty($matches[2])) {
+                $end = min((int) $matches[2], $fileSize - 1);
+            }
+            if ($start <= $end && $start < $fileSize) {
+                $isRange = true;
+            } else {
+                $start = 0;
+                $end = $fileSize - 1;
+            }
+        }
+
+        $length = $end - $start + 1;
+
+        // 5. Envoi des en-têtes HTTP anti-buffering et de streaming binaire.
+        if ($cleanBuffers) {
+            if ($isRange) {
+                http_response_code(206);
+                header("Content-Range: bytes {$start}-{$end}/{$fileSize}");
+            } else {
+                http_response_code(200);
+            }
+
+            // Désactive le buffering intermédiaire sur LiteSpeed et Nginx.
+            header('X-LiteSpeed-Buffer: no');
+            header('X-Accel-Buffering: no');
+            header('Content-Description: File Transfer');
+            header('Content-Type: application/zip');
+            header('Content-Disposition: attachment; filename="' . basename($filePath) . '"');
+            header('Content-Transfer-Encoding: binary');
+            header('Expires: 0');
+            header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+            header('Pragma: public');
+            header('Accept-Ranges: bytes');
+            header('Content-Length: ' . (string) $length);
+        }
+
+        $handle = fopen($filePath, 'rb');
+        if ($handle === false) {
+            return false;
+        }
+
+        if ($start > 0) {
+            fseek($handle, $start);
+        }
+
+        $bytesRemaining = $length;
+        while ($bytesRemaining > 0 && !feof($handle)) {
+            $readSize = min($chunkSize, $bytesRemaining);
+            $buffer = fread($handle, $readSize);
+            if ($buffer === false) {
+                break;
+            }
+
+            echo $buffer;
+
+            if ($cleanBuffers) {
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
+                flush();
+            }
+
+            $bytesRemaining -= strlen($buffer);
+
+            // Interrompt le streaming si le client a fermé sa connexion.
+            if (connection_status() !== CONNECTION_NORMAL) {
+                break;
+            }
+        }
+
+        fclose($handle);
+        return true;
     }
 }

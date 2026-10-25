@@ -86,5 +86,89 @@ class ArchiverTest extends TestCase {
         // Nettoie le dossier récent créé pour le test.
         Archiver::cleanDirectory($newJobDir);
     }
+
+    /**
+     * Teste le streaming d'un fichier par morceaux.
+     */
+    public function testStreamFileToOutputStreamsCorrectly(): void {
+        $filePath = $this->testDir . '/stream_test.txt';
+        $content = str_repeat('ABCDEF1234567890', 100);
+        file_put_contents($filePath, $content);
+
+        // Démarre un buffer pour capturer la sortie du test sans fermer le buffer PHPUnit.
+        ob_start();
+        $result = Archiver::streamFileToOutput($filePath, 64, false);
+        $output = ob_get_clean();
+
+        $this->assertTrue($result);
+        $this->assertSame($content, $output);
+    }
+
+    /**
+     * Teste le streaming d'un fichier inexistant.
+     */
+    public function testStreamFileToOutputFailsOnNonExistentFile(): void {
+        $result = Archiver::streamFileToOutput($this->testDir . '/does_not_exist.zip');
+        $this->assertFalse($result);
+    }
+
+    /**
+     * Teste le streaming partiel avec l'en-tête HTTP Range.
+     */
+    public function testStreamFileToOutputSupportsRangeRequests(): void {
+        $filePath = $this->testDir . '/range_test.txt';
+        $content = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        file_put_contents($filePath, $content);
+
+        $_SERVER['HTTP_RANGE'] = 'bytes=5-14';
+
+        ob_start();
+        $result = Archiver::streamFileToOutput($filePath, 4, false);
+        $output = ob_get_clean();
+
+        unset($_SERVER['HTTP_RANGE']);
+
+        $this->assertTrue($result);
+        $this->assertSame('56789ABCDE', $output);
+    }
+
+    /**
+     * Teste la génération d'une URL de téléchargement direct éphémère et sa purge.
+     */
+    public function testPrepareDirectDownloadUrlAndPurge(): void {
+        $storageDir = Archiver::getStorageDir();
+        wp_mkdir_p($storageDir);
+
+        $dummyZip = $storageDir . 'backup_test.zip';
+        file_put_contents($dummyZip, 'ZIP_BINARY_DATA');
+
+        $directUrl = Archiver::prepareDirectDownloadUrl($dummyZip);
+        $this->assertNotNull($directUrl);
+        $this->assertStringContainsString('/eg-backup-data/dl/', (string) $directUrl);
+        $this->assertStringEndsWith('/backup_test.zip', (string) $directUrl);
+
+        // La purge immédiate (maxAge = 0) doit supprimer le dossier token sans supprimer l'archive source.
+        $purged = Archiver::purgeOldDownloadLinks(0);
+        $this->assertGreaterThanOrEqual(1, $purged);
+        $this->assertFileExists($dummyZip);
+
+        @unlink($dummyZip);
+    }
+
+    /**
+     * Teste le streaming d'une tranche précise via streamFileChunk (Chunked Fetch).
+     */
+    public function testStreamFileChunkOutputsRequestedSlice(): void {
+        $filePath = $this->testDir . '/chunk_slice_test.bin';
+        $content = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        file_put_contents($filePath, $content);
+
+        ob_start();
+        $result = Archiver::streamFileChunk($filePath, 10, 19, false);
+        $output = ob_get_clean();
+
+        $this->assertTrue($result);
+        $this->assertSame('ABCDEFGHIJ', $output);
+    }
 }
 

@@ -28,7 +28,7 @@ if (!defined('OBJECT_K')) {
     define('OBJECT_K', 'OBJECT_K');
 }
 if (!defined('EG_BACKUP_VERSION')) {
-    define('EG_BACKUP_VERSION', '1.0.7');
+    define('EG_BACKUP_VERSION', '1.0.8');
 }
 if (!defined('EG_BACKUP_PLUGIN_FILE')) {
     define('EG_BACKUP_PLUGIN_FILE', dirname(__DIR__) . '/eg-backup.php');
@@ -77,5 +77,18 @@ if (!function_exists('wp_upload_dir')) {
             'basedir' => sys_get_temp_dir() . '/eg_backup_test_uploads',
             'baseurl' => 'https://example.com/wp-content/uploads',
         ];
+    }
+}
+if (!function_exists('wp_mkdir_p')) {
+    function wp_mkdir_p($target) {
+        if (is_dir($target)) {
+            return true;
+        }
+        return @mkdir($target, 0777, true);
+    }
+}
+if (!function_exists('wp_generate_password')) {
+    function wp_generate_password($length = 12) {
+        return substr(bin2hex(random_bytes(max(1, (int) ceil($length / 2)))), 0, (int) $length);
     }
 }

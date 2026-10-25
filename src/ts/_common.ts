@@ -110,3 +110,152 @@ export function extractErrorMessage(response: any, defaultMsg: string): string {
     }
     return defaultMsg;
 }
+
+/**
+ * Formate une taille en octets en chaîne lisible (Ko, Mo, Go).
+ */
+export function formatBytes(bytes: number): string {
+    if (!bytes || bytes <= 0) return '0 Ko';
+    const units = ['o', 'Ko', 'Mo', 'Go', 'To'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    const size = bytes / Math.pow(1024, i);
+    const formatted = size >= 10 || i === 0 ? Math.round(size) : Math.round(size * 10) / 10;
+    return `${formatted} ${units[i]}`;
+}
+
+/**
+ * Télécharge une archive ZIP par tranches de 64 Mo (Chunked Fetch) puis déclenche la sauvegarde locale.
+ * Contourne définitivement la coupure réseau à 512 Mo (~537 Mo) imposée par certains hébergeurs/proxys.
+ */
+export async function downloadBackupByChunks(
+    downloadUrl: string,
+    filename: string,
+    initialTotalSize: number,
+    buttonEl?: HTMLElement | null
+): Promise<void> {
+    if (buttonEl?.getAttribute('data-downloading') === '1') {
+        return;
+    }
+
+    const originalHtml = buttonEl ? buttonEl.innerHTML : '';
+    if (buttonEl) {
+        buttonEl.setAttribute('data-downloading', '1');
+        buttonEl.classList.add('disabled');
+        buttonEl.style.pointerEvents = 'none';
+    }
+
+    const CHUNK_SIZE = 64 * 1024 * 1024; // 64 Mo par morceau (8x sous la limite de 512 Mo).
+    const MAX_RETRIES = 3;
+    const chunks: Blob[] = [];
+    let totalSize = initialTotalSize > 0 ? initialTotalSize : 0;
+    let offset = 0;
+
+    try {
+        while (totalSize === 0 || offset < totalSize) {
+            const end = totalSize > 0
+                ? Math.min(offset + CHUNK_SIZE - 1, totalSize - 1)
+                : offset + CHUNK_SIZE - 1;
+
+            if (buttonEl) {
+                if (totalSize > 0) {
+                    const percent = Math.min(99, Math.round((offset / totalSize) * 100));
+                    buttonEl.innerHTML = `<span class="dashicons dashicons-download"></span> ${percent}% (${formatBytes(offset)} / ${formatBytes(totalSize)})`;
+                } else {
+                    buttonEl.innerHTML = `<span class="dashicons dashicons-download"></span> Téléchargement...`;
+                }
+            }
+
+            const separator = downloadUrl.includes('?') ? '&' : '?';
+            const chunkUrl = `${downloadUrl}${separator}chunk_start=${offset}&chunk_end=${end}`;
+
+            let chunkBlob: Blob | null = null;
+            let lastError: any = null;
+
+            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                try {
+                    const response = await fetch(chunkUrl, {
+                        method: 'GET',
+                        credentials: 'same-origin',
+                        cache: 'no-store',
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status} ${response.statusText}`);
+                    }
+
+                    const headerTotal = response.headers.get('X-EG-Total-Size');
+                    if (headerTotal) {
+                        const parsedTotal = parseInt(headerTotal, 10);
+                        if (parsedTotal > 0) {
+                            totalSize = parsedTotal;
+                        }
+                    }
+
+                    chunkBlob = await response.blob();
+                    break;
+                } catch (err) {
+                    lastError = err;
+                    if (attempt < MAX_RETRIES) {
+                        await new Promise(r => setTimeout(r, 1000 * attempt));
+                    }
+                }
+            }
+
+            if (!chunkBlob) {
+                throw lastError || new Error('Échec du téléchargement d\'un tronçon.');
+            }
+
+            if (chunkBlob.size === 0) {
+                break;
+            }
+
+            chunks.push(chunkBlob);
+            offset += chunkBlob.size;
+
+            if (totalSize > 0 && offset >= totalSize) {
+                break;
+            }
+            if (chunkBlob.size < CHUNK_SIZE) {
+                break;
+            }
+        }
+
+        if (buttonEl) {
+            buttonEl.innerHTML = `<span class="dashicons dashicons-yes"></span> Assemblage ZIP...`;
+        }
+
+        const finalBlob = new Blob(chunks, { type: 'application/zip' });
+        const objectUrl = URL.createObjectURL(finalBlob);
+
+        const tempLink = document.createElement('a');
+        tempLink.href = objectUrl;
+        tempLink.download = filename;
+        tempLink.style.display = 'none';
+        document.body.appendChild(tempLink);
+        tempLink.click();
+        tempLink.remove();
+
+        // Libère la référence mémoire après le déclenchement de l'enregistrement par le navigateur.
+        setTimeout(() => {
+            URL.revokeObjectURL(objectUrl);
+        }, 60000);
+
+        if (buttonEl) {
+            buttonEl.innerHTML = `<span class="dashicons dashicons-yes"></span> Téléchargé (100%)`;
+            setTimeout(() => {
+                buttonEl.innerHTML = originalHtml;
+                buttonEl.removeAttribute('data-downloading');
+                buttonEl.classList.remove('disabled');
+                buttonEl.style.pointerEvents = '';
+            }, 3000);
+        }
+    } catch (err: any) {
+        if (buttonEl) {
+            buttonEl.innerHTML = originalHtml;
+            buttonEl.removeAttribute('data-downloading');
+            buttonEl.classList.remove('disabled');
+            buttonEl.style.pointerEvents = '';
+        }
+        alert(`Erreur lors du téléchargement de l'archive : ${err.message || err}`);
+    }
+}

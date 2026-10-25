@@ -2,7 +2,7 @@
  * Gestion des interactions de la page de liste des sauvegardes (Vanilla TypeScript).
  */
 
-import { $, wpAjax, extractErrorMessage } from './_common';
+import { $, wpAjax, extractErrorMessage, downloadBackupByChunks } from './_common';
 
 document.addEventListener('DOMContentLoaded', () => {
     if (typeof egBackupData === 'undefined') {
@@ -10,6 +10,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const { ajaxUrl, nonce } = egBackupData;
+
+    // Téléchargement d'archive segmenté par tranches de 64 Mo (anti-coupure 512 Mo)
+    document.addEventListener('click', async (e: Event) => {
+        const dlBtn = (e.target as HTMLElement).closest<HTMLAnchorElement>('.eg-btn-download-backup');
+        if (!dlBtn) return;
+
+        const href = dlBtn.getAttribute('href') || '';
+        const filename = dlBtn.getAttribute('data-filename') || '';
+        const size = parseInt(dlBtn.getAttribute('data-size') || '0', 10);
+
+        if (!href || !filename) return;
+
+        e.preventDefault();
+        await downloadBackupByChunks(href, filename, size, dlBtn);
+    });
 
     // Suppression d'archive depuis la liste (délégation d'événements)
     document.addEventListener('click', async (e: Event) => {

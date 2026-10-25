@@ -194,16 +194,24 @@ class AdminController {
             wp_die('Fichier de sauvegarde introuvable.');
         }
 
-        // Envoi des en-têtes HTTP de téléchargement.
-        header('Content-Description: File Transfer');
-        header('Content-Type: application/zip');
-        header('Content-Disposition: attachment; filename="' . basename($filePath) . '"');
-        header('Expires: 0');
-        header('Cache-Control: must-revalidate');
-        header('Pragma: public');
-        header('Content-Length: ' . filesize($filePath));
-        flush();
-        readfile($filePath);
+        // Mode 1 : Téléchargement segmenté par tranches de 64 Mo (Chunked Fetch JS).
+        // Permet de franchir tout plafond de 512 Mo par réponse HTTP imposé par le proxy/pare-feu de l'hébergeur.
+        if (isset($_GET['chunk_start']) && isset($_GET['chunk_end'])) {
+            $chunkStart = max(0, (int) $_GET['chunk_start']);
+            $chunkEnd   = max($chunkStart, (int) $_GET['chunk_end']);
+            Archiver::streamFileChunk($filePath, $chunkStart, $chunkEnd);
+            exit;
+        }
+
+        // Mode 2 : Téléchargement statique direct servi par le serveur web (via hardlink éphémère sécurisé).
+        $directUrl = Archiver::prepareDirectDownloadUrl($filePath);
+        if (!empty($directUrl)) {
+            wp_redirect($directUrl, 302);
+            exit;
+        }
+
+        // Mode 3 (Fallback) : Diffusion binaire PHP par morceaux avec reprise HTTP Range.
+        Archiver::streamFileToOutput($filePath);
         exit;
     }
 
