@@ -40,7 +40,7 @@ class AdminController {
             $parentSlug,
             [$this, 'renderBackupPage'],
             'dashicons-database-export',
-            80
+            30.7
         );
 
         $this->hookSuffixes['backup_sub'] = (string) add_submenu_page(

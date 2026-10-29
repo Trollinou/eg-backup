@@ -28,7 +28,7 @@ if (!defined('OBJECT_K')) {
     define('OBJECT_K', 'OBJECT_K');
 }
 if (!defined('EG_BACKUP_VERSION')) {
-    define('EG_BACKUP_VERSION', '1.0.8');
+    define('EG_BACKUP_VERSION', '1.0.9');
 }
 if (!defined('EG_BACKUP_PLUGIN_FILE')) {
     define('EG_BACKUP_PLUGIN_FILE', dirname(__DIR__) . '/eg-backup.php');

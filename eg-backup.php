@@ -3,7 +3,7 @@
  * Plugin Name: EG Backup & Restore
  * Plugin URI: https://github.com/eg-backup/eg-backup
  * Description: Sauvegarde et restauration intelligente de WordPress : base de données complète, sélection granulaire des données de plugins hors BDD, manifeste des dépendances (plugins/thèmes) et assistant de restauration interactif.
- * Version: 1.0.8
+ * Version: 1.0.9
  * Author: Etienne Gagnon
  * Author URI: https://github.com/Trollinou
  * License: GPL-2.0+
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Définition des constantes du plugin.
-define('EG_BACKUP_VERSION', '1.0.8');
+define('EG_BACKUP_VERSION', '1.0.9');
 define('EG_BACKUP_PLUGIN_FILE', __FILE__);
 define('EG_BACKUP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('EG_BACKUP_PLUGIN_URL', plugin_dir_url(__FILE__));
