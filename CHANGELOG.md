@@ -8,6 +8,26 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 
 ## [Unreleased]
 
+## [1.0.10] - 2026-11-04
+
+### Corrigé
+- **Préservation des structures sérialisées PHP lors du nettoyage des placeholders WordPress (`DatabaseImporter::recursiveReplace`)** :
+  - Remplacement sécurisé des tokens résiduels `{hash}` d'échappement WordPress (`placeholder_escape`) au sein des chaînes sérialisées complexes (ex: options Yoast SEO `wpseo_titles`). Le traitement récursif garantit le recalcul dynamique des longueurs d'octets déclarées (`s:XX:`) via `serialize()`, éliminant tout risque d'échec de désérialisation (`unserialize()`) ou d'erreur fatale.
+  - Ajout de la méthode de secours `DatabaseImporter::repairSerializedString()` pour réparer à la volée les déclarations de longueurs corrompues dans les requêtes SQL d'importation.
+- **Correction de l'enregistrement de commande WP-CLI (`BackupCommand`)** :
+  - Suppression de l'enregistrement direct de la commande racine `wp eg-backup` comme commande feuille à fonction de rappel, éliminant l'erreur WP-CLI `'wp eg-backup' can't have subcommands` et permettant le fonctionnement natif des sous-commandes (`create`, `list`, `inspect`, `restore`, `purge-temp`).
+
+### Ajouté
+- **Health Check & réinitialisation automatique des permaliens post-restauration (`DatabaseImporter::checkPermalinksHealth`)** :
+  - Vérification automatique de l'option `permalink_structure` à la fin de la restauration de la base de données : si un token résiduel `{hash}` ou une accolade est détectée, la structure est automatiquement réinitialisée vers `/%postname%/`.
+  - Nettoyage préventif des options de configuration dans `wp_options` susceptibles de contenir des tokens d'échappement résiduels.
+  - Exécution systématique de `flush_rewrite_rules(true)` en fin de restauration pour recalculer les règles de réécriture et prévenir toute erreur 404 sur les articles et CPT sans nécessiter d'intervention manuelle dans l'administration.
+  - Déclenchement automatique en fin d'importation SQL (EOF), lors de la finalisation AJAX dans l'administration et en fin de restauration WP-CLI.
+- **Tests unitaires automatisés (`DatabaseTest`)** :
+  - Tests de préservation des données sérialisées et recalcul des longueurs d'octets.
+  - Tests de détection et réinitialisation de `permalink_structure` corrompu avec régénération des règles de réécriture.
+  - Tests de non-collision de commande WP-CLI.
+
 ## [1.0.9] - 2026-10-29
 
 ## [1.0.8] - 2026-10-25

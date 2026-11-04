@@ -9,6 +9,7 @@ Plugin WordPress de sauvegarde et restauration intelligente :
   - Détecte et compare les plugins et thèmes requis vs installés.
   - Propose l'installation en 1-clic pour les extensions issues du dépôt officiel WordPress.org.
   - Outil de *Search & Replace* (compatible avec les données sérialisées PHP) pour la migration vers un nouveau nom de domaine ou un environnement local/staging.
+  - **Permalinks Health Check & régénération automatique** : contrôle de l'intégrité de la structure des permaliens en fin de restauration, assainissement automatique vers `/%postname%/` si un token corrompu est détecté, et recalcul systématique des règles de réécriture (`flush_rewrite_rules`) pour prévenir toute erreur 404 sans intervention manuelle.
   - Activation automatique du mode maintenance pendant l'opération.
 - **Zéro timeout serveur** : exécution par micro-lots via requêtes AJAX successives avec barre de progression et console en temps réel.
 - **Purge et gestion intelligente des fichiers temporaires** : Garbage Collector opportuniste, annulation immédiate sur incident et tâche de fond WP-Cron quotidienne éliminant les répertoires de travail orphelins (`job_*`, `restore_*`) vieux de plus de 2 heures.

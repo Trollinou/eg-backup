@@ -24,7 +24,6 @@ class BackupCommand {
             return;
         }
 
-        \WP_CLI::add_command('eg-backup', [__CLASS__, 'run']);
         \WP_CLI::add_command('eg-backup create', [__CLASS__, 'create']);
         \WP_CLI::add_command('eg-backup list', [__CLASS__, 'listBackups']);
         \WP_CLI::add_command('eg-backup inspect', [__CLASS__, 'inspect']);
@@ -332,6 +331,8 @@ class BackupCommand {
 
         Archiver::cleanDirectory($tempDir);
         if (!$isMediaOnly) {
+            // Vérification de santé et réinitialisation des permaliens après restauration.
+            DatabaseImporter::checkPermalinksHealth();
             MaintenanceMode::disable();
         }
 

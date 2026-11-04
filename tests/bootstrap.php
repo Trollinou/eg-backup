@@ -28,7 +28,7 @@ if (!defined('OBJECT_K')) {
     define('OBJECT_K', 'OBJECT_K');
 }
 if (!defined('EG_BACKUP_VERSION')) {
-    define('EG_BACKUP_VERSION', '1.0.9');
+    define('EG_BACKUP_VERSION', '1.0.10');
 }
 if (!defined('EG_BACKUP_PLUGIN_FILE')) {
     define('EG_BACKUP_PLUGIN_FILE', dirname(__DIR__) . '/eg-backup.php');
@@ -90,5 +90,55 @@ if (!function_exists('wp_mkdir_p')) {
 if (!function_exists('wp_generate_password')) {
     function wp_generate_password($length = 12) {
         return substr(bin2hex(random_bytes(max(1, (int) ceil($length / 2)))), 0, (int) $length);
+    }
+}
+
+// Variables globales de stockage pour les tests unitaires.
+$GLOBALS['wp_test_options'] = [];
+$GLOBALS['wp_test_rewrite_flushed'] = false;
+
+if (!function_exists('get_option')) {
+    function get_option($option, $default = false) {
+        global $wp_test_options;
+        return $wp_test_options[$option] ?? $default;
+    }
+}
+
+if (!function_exists('update_option')) {
+    function update_option($option, $value, $autoload = null) {
+        global $wp_test_options;
+        $wp_test_options[$option] = $value;
+        return true;
+    }
+}
+
+if (!function_exists('flush_rewrite_rules')) {
+    function flush_rewrite_rules($hard = true) {
+        global $wp_test_rewrite_flushed;
+        $wp_test_rewrite_flushed = $hard;
+    }
+}
+
+if (!function_exists('wp_cache_delete')) {
+    function wp_cache_delete($key, $group = '') {
+        return true;
+    }
+}
+
+if (!class_exists('WP_CLI')) {
+    class WP_CLI {
+        /**
+         * @var array<string, mixed>
+         */
+        public static $commands = [];
+
+        public static function add_command($name, $callable, $args = []) {
+            self::$commands[$name] = $callable;
+        }
+
+        public static function line($message) {}
+        public static function success($message) {}
+        public static function error($message) {}
+        public static function warning($message) {}
     }
 }

@@ -878,6 +878,9 @@ class AjaxHandler {
             if (function_exists('wp_clean_themes_cache')) {
                 wp_clean_themes_cache();
             }
+
+            // 5. Vérification de santé et réinitialisation des permaliens après restauration.
+            DatabaseImporter::checkPermalinksHealth();
         }
 
         Archiver::cleanDirectory($tempDir);

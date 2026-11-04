@@ -114,6 +114,8 @@ class DatabaseImporter {
 
         if ($isEof) {
             $wpdb->query("SET FOREIGN_KEY_CHECKS = 1;");
+            // Vérification de santé automatique et réinitialisation des permaliens si nécessaire.
+            self::checkPermalinksHealth();
         }
 
         return [
@@ -202,29 +204,50 @@ class DatabaseImporter {
 
     /**
      * Remplacement récursif gérant les données sérialisées, tableaux et objets.
+     * Intègre le nettoyage sécurisé des tokens d'échappement WordPress ({hash}) en symbole '%'
+     * sans corrompre les longueurs d'octets déclarées (s:XX:).
      *
-     * @param mixed $data
-     * @param string $search
-     * @param string $replace
-     * @return mixed
+     * @param mixed $data Donnée à traiter (chaîne sérialisée, tableau, objet, etc.).
+     * @param string $search Chaîne à rechercher (optionnel si uniquement nettoyage de tokens).
+     * @param string $replace Chaîne de remplacement.
+     * @return mixed Donnée assainie et mise à jour.
      */
-    public static function recursiveReplace($data, $search, $replace) {
+    public static function recursiveReplace($data, $search = '', $replace = '') {
         if (is_string($data)) {
-            // Vérifier si la chaîne est sérialisée
+            // Vérifier si la chaîne est sérialisée.
             if (self::isSerialized($data)) {
                 $unserialized = @unserialize($data);
+                // Si la désérialisation échoue à cause de longueurs corrompues, tenter une réparation.
+                if ($unserialized === false && $data !== 'b:0;') {
+                    $repaired = self::repairSerializedString($data);
+                    if ($repaired !== $data) {
+                        $unserialized = @unserialize($repaired);
+                    }
+                }
+
                 if ($unserialized !== false || $data === 'b:0;') {
                     $replaced = self::recursiveReplace($unserialized, $search, $replace);
                     return serialize($replaced);
                 }
             }
-            return str_replace($search, $replace, $data);
+
+            $result = $data;
+            if ($search !== '' && $search !== null) {
+                $result = str_replace($search, $replace, $result);
+            }
+
+            // Nettoyage des tokens d'échappement WordPress ({hash}) résiduels dans la chaîne.
+            if (strpos($result, '{') !== false && preg_match('/\{[a-f0-9]{64}\}|\{[a-f0-9]{32}\}/i', $result)) {
+                $result = (string) preg_replace('/\{[a-f0-9]{64}\}|\{[a-f0-9]{32}\}/i', '%', $result);
+            }
+
+            return $result;
         }
 
         if (is_array($data)) {
             $result = [];
             foreach ($data as $key => $val) {
-                $newKey = is_string($key) ? str_replace($search, $replace, $key) : $key;
+                $newKey = is_string($key) ? self::recursiveReplace($key, $search, $replace) : $key;
                 $result[$newKey] = self::recursiveReplace($val, $search, $replace);
             }
             return $result;
@@ -239,6 +262,26 @@ class DatabaseImporter {
         }
 
         return $data;
+    }
+
+    /**
+     * Répare la longueur déclarée des chaînes (s:XX:) au sein d'une structure sérialisée corrompue.
+     *
+     * @param string $data Chaîne sérialisée potentiellement corrompue.
+     * @return string Chaîne avec les longueurs d'octets synchronisées.
+     */
+    public static function repairSerializedString($data) {
+        if (!is_string($data) || strpos($data, 's:') === false) {
+            return $data;
+        }
+
+        return (string) preg_replace_callback(
+            '/s:(\d+):"(.*?)";/s',
+            function ($matches) {
+                return 's:' . strlen($matches[2]) . ':"' . $matches[2] . '";';
+            },
+            $data
+        );
     }
 
     /**
@@ -311,15 +354,100 @@ class DatabaseImporter {
 
     /**
      * Nettoie les éventuels tokens d'échappement WordPress ({hash}) résiduels d'un export défaillant
-     * et les rétablit en symbole '%'.
+     * et les rétablit en symbole '%', tout en préservant l'intégrité des structures sérialisées.
      *
-     * @param string $query Requête SQL à assainir.
+     * @param string $query Requête SQL ou chaîne à assainir.
      * @return string Requête nettoyée.
      */
     public static function cleanPlaceholderEscape($query) {
-        if (strpos($query, '{') !== false && preg_match('/\{[a-f0-9]{64}\}|\{[a-f0-9]{32}\}/i', $query)) {
-            return (string) preg_replace('/\{[a-f0-9]{64}\}|\{[a-f0-9]{32}\}/i', '%', $query);
+        if (!is_string($query) || strpos($query, '{') === false || !preg_match('/\{[a-f0-9]{64}\}|\{[a-f0-9]{32}\}/i', $query)) {
+            return $query;
         }
-        return $query;
+
+        // Si la chaîne entière est une donnée PHP sérialisée, utiliser le remplacement récursif sécurisé.
+        if (self::isSerialized($query)) {
+            return (string) self::recursiveReplace($query, '', '');
+        }
+
+        // Remplacement standard pour les requêtes SQL.
+        $cleaned = (string) preg_replace('/\{[a-f0-9]{64}\}|\{[a-f0-9]{32}\}/i', '%', $query);
+
+        // Si la requête contient des données sérialisées (ex: INSERT wp_options), réparer les longueurs s:XX:.
+        if (strpos($cleaned, 's:') !== false && (strpos($cleaned, 'a:') !== false || strpos($cleaned, 'O:') !== false)) {
+            $cleaned = self::repairSerializedString($cleaned);
+        }
+
+        return $cleaned;
+    }
+
+    /**
+     * Vérification automatique de santé des permaliens en fin de restauration de la base de données.
+     * Assainit le permalink_structure corrompu par un jeton d'échappement WordPress ({hash})
+     * et régénère les règles de réécriture (flush_rewrite_rules).
+     *
+     * @return bool True si la vérification a été exécutée avec succès.
+     */
+    public static function checkPermalinksHealth() {
+        global $wpdb;
+
+        // Vider le cache des options WordPress pour s'assurer d'une lecture fraîche depuis la base.
+        if (function_exists('wp_cache_delete')) {
+            wp_cache_delete('permalink_structure', 'options');
+            wp_cache_delete('alloptions', 'options');
+        }
+
+        // Nettoyage préventif des options contenant des tokens de placeholder résiduels dans wp_options.
+        if (!empty($wpdb) && !empty($wpdb->options)) {
+            $dirtyOptions = $wpdb->get_results(
+                "SELECT option_name, option_value FROM {$wpdb->options} WHERE option_value LIKE '%{%'",
+                ARRAY_A
+            );
+            if (!empty($dirtyOptions) && is_array($dirtyOptions)) {
+                foreach ($dirtyOptions as $opt) {
+                    $optVal = $opt['option_value'] ?? '';
+                    if (strpos($optVal, '{') !== false && preg_match('/\{[a-f0-9]{64}\}|\{[a-f0-9]{32}\}/i', $optVal)) {
+                        $cleanedVal = self::recursiveReplace($optVal, '', '');
+                        if ($cleanedVal !== $optVal) {
+                            $wpdb->update(
+                                $wpdb->options,
+                                ['option_value' => $cleanedVal],
+                                ['option_name' => $opt['option_name']]
+                            );
+                            if (function_exists('wp_cache_delete')) {
+                                wp_cache_delete($opt['option_name'], 'options');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        $permalink = function_exists('get_option')
+            ? (string) get_option('permalink_structure', '')
+            : '';
+
+        if (empty($permalink) && !empty($wpdb) && !empty($wpdb->options)) {
+            $permalink = (string) $wpdb->get_var("SELECT option_value FROM {$wpdb->options} WHERE option_name = 'permalink_structure'");
+        }
+
+        // Si le permalien contient une accolade '{' ou un hash d'échappement WordPress, le réinitialiser.
+        if (strpos($permalink, '{') !== false || preg_match('/\{[a-f0-9]{64}\}|\{[a-f0-9]{32}\}/i', $permalink)) {
+            if (function_exists('update_option')) {
+                update_option('permalink_structure', '/%postname%/');
+            } elseif (!empty($wpdb) && !empty($wpdb->options)) {
+                $wpdb->update(
+                    $wpdb->options,
+                    ['option_value' => '/%postname%/'],
+                    ['option_name' => 'permalink_structure']
+                );
+            }
+        }
+
+        // Recalculer systématiquement les règles de réécriture sans intervention manuelle de l'utilisateur.
+        if (function_exists('flush_rewrite_rules')) {
+            flush_rewrite_rules(true);
+        }
+
+        return true;
     }
 }
