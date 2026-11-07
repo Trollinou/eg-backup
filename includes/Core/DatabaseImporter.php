@@ -162,13 +162,17 @@ class DatabaseImporter {
                 continue;
             }
 
-            // Parcourir les lignes par blocs de 1000
+            // Parcourir les lignes par blocs de 1000.
             $offset = 0;
             $limit = 1000;
 
             while (true) {
                 $colsSelect = array_map(function($c) { return "`$c`"; }, array_merge([$primaryKey], $textColumns));
-                $query = "SELECT " . implode(', ', $colsSelect) . " FROM `{$safeTable}` LIMIT {$limit} OFFSET {$offset}";
+                $query = $wpdb->prepare(
+                    "SELECT " . implode(', ', $colsSelect) . " FROM `{$safeTable}` LIMIT %d OFFSET %d",
+                    $limit,
+                    $offset
+                );
                 $rows = $wpdb->get_results($query, ARRAY_A);
 
                 if (empty($rows)) {
@@ -216,12 +220,13 @@ class DatabaseImporter {
         if (is_string($data)) {
             // Vérifier si la chaîne est sérialisée.
             if (self::isSerialized($data)) {
-                $unserialized = @unserialize($data);
+                // Désérialisation sécurisée interdisant l'instanciation de classes (protection contre POP chains / PHP Object Injection).
+                $unserialized = @unserialize($data, ['allowed_classes' => false]);
                 // Si la désérialisation échoue à cause de longueurs corrompues, tenter une réparation.
                 if ($unserialized === false && $data !== 'b:0;') {
                     $repaired = self::repairSerializedString($data);
                     if ($repaired !== $data) {
-                        $unserialized = @unserialize($repaired);
+                        $unserialized = @unserialize($repaired, ['allowed_classes' => false]);
                     }
                 }
 

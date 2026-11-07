@@ -569,14 +569,34 @@ class AjaxHandler {
 
         if (!empty($_FILES['backup_file']['tmp_name'])) {
             $uploaded = $_FILES['backup_file'];
-            if (pathinfo($uploaded['name'], PATHINFO_EXTENSION) !== 'zip') {
+            $ext = strtolower(pathinfo((string) ($uploaded['name'] ?? ''), PATHINFO_EXTENSION));
+            if ($ext !== 'zip') {
                 wp_send_json_error(['message' => 'Le fichier doit être une archive .zip valide.']);
             }
-            $targetPath = Archiver::getStorageDir() . sanitize_file_name($uploaded['name']);
+
+            // Vérification de la signature binaire d'un fichier ZIP (magic bytes PK\x03\x04).
+            $tmpPath = (string) ($uploaded['tmp_name'] ?? '');
+            $fp = @fopen($tmpPath, 'rb');
+            $magic = $fp ? fread($fp, 4) : '';
+            if ($fp) {
+                fclose($fp);
+            }
+            if ($magic !== "PK\x03\x04" && $magic !== "PK\x05\x06") {
+                wp_send_json_error(['message' => 'Le fichier téléversé n\'est pas une archive ZIP intègre.']);
+            }
+
+            $safeName = sanitize_file_name((string) ($uploaded['name'] ?? ''));
+            if (strtolower(pathinfo($safeName, PATHINFO_EXTENSION)) !== 'zip') {
+                $safeName .= '.zip';
+            }
+            $targetPath = Archiver::getStorageDir() . $safeName;
             move_uploaded_file($uploaded['tmp_name'], $targetPath);
             $zipPath = $targetPath;
         } elseif (!empty($_POST['filename'])) {
-            $filename = sanitize_file_name($_POST['filename']);
+            $filename = sanitize_file_name((string) $_POST['filename']);
+            if (empty($filename) || strtolower(pathinfo($filename, PATHINFO_EXTENSION)) !== 'zip') {
+                wp_send_json_error(['message' => 'Nom de fichier de sauvegarde invalide.']);
+            }
             $zipPath = Archiver::getStorageDir() . $filename;
         }
 
@@ -609,7 +629,7 @@ class AjaxHandler {
     public function eg_restore_install_plugin() {
         $this->verifySecurity();
 
-        $slug = sanitize_text_field($_POST['slug'] ?? '');
+        $slug = sanitize_key($_POST['slug'] ?? '');
         if (empty($slug)) {
             wp_send_json_error(['message' => 'Slug de plugin manquant.']);
         }
@@ -648,6 +668,9 @@ class AjaxHandler {
         $this->verifySecurity();
 
         $filename = sanitize_file_name($_POST['filename'] ?? '');
+        if (empty($filename) || strtolower(pathinfo($filename, PATHINFO_EXTENSION)) !== 'zip') {
+            wp_send_json_error(['message' => 'Archive invalide ou extension non autorisée.']);
+        }
         $zipPath = Archiver::getStorageDir() . $filename;
 
         if (!file_exists($zipPath)) {
@@ -1005,7 +1028,8 @@ class AjaxHandler {
             }
 
             try {
-                $directoryIterator = new \RecursiveDirectoryIterator($folderPath, \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::FOLLOW_SYMLINKS);
+                // Bannir FOLLOW_SYMLINKS pour empêcher l'extraction de fichiers hors arborescence autorisée.
+                $directoryIterator = new \RecursiveDirectoryIterator($folderPath, \FilesystemIterator::SKIP_DOTS);
                 $filterIterator = new \RecursiveCallbackFilterIterator($directoryIterator, function($current) use ($excludedNames) {
                     $filename = strtolower($current->getFilename());
                     if (in_array($filename, $excludedNames, true)) {

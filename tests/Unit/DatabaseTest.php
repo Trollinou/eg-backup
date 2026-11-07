@@ -145,6 +145,21 @@ class DatabaseTest extends TestCase {
         $this->assertArrayHasKey('eg-backup restore', \WP_CLI::$commands);
         $this->assertArrayHasKey('eg-backup purge-temp', \WP_CLI::$commands);
     }
+
+    /**
+     * Vérifie que recursiveReplace interdit l'instanciation de classes d'objets (protection Object Injection / POP chains).
+     */
+    public function testRecursiveReplaceBlocksObjectInstantiation(): void {
+        // Objet arbitraire avec propriété.
+        $serializedObject = 'O:8:"stdClass":1:{s:3:"url";s:21:"https://old-site.com/";}';
+
+        $result = DatabaseImporter::recursiveReplace($serializedObject, 'old-site.com', 'new-site.com');
+        $this->assertIsString($result);
+
+        // La désérialisation interne avec allowed_classes => false doit produire __PHP_Incomplete_Class.
+        $unserialized = @unserialize($result, ['allowed_classes' => false]);
+        $this->assertInstanceOf('__PHP_Incomplete_Class', $unserialized);
+    }
 }
 
 

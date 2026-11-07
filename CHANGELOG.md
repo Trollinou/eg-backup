@@ -8,6 +8,30 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 
 ## [Unreleased]
 
+### Sécurité
+- **Protection contre le Path Traversal et le Zip Slip (`Archiver::restoreFilesChunk` & `Archiver::extractZip`)** :
+  - Rejet strict de toute entrée d'archive contenant des séquences de traversée (`..`) ou des octets nuls (`\0`).
+  - Validation du chemin canonique résolu (`realpath`) garantissant que l'extraction s'effectue exclusivement au sein de `WP_CONTENT_DIR` ou du répertoire temporaire de travail, neutralisant tout risque d'écrasement de fichiers critiques (`wp-config.php`, etc.).
+- **Protection contre l'injection d'objets PHP / POP Chains (`DatabaseImporter::recursiveReplace`)** :
+  - Ajout systématique de l'option `['allowed_classes' => false]` à tous les appels `unserialize()` lors du Search & Replace en base de données, bloquant l'instanciation de classes et neutralisant les chaînes d'exploitation.
+- **Protection contre les vulnérabilités XSS DOM-based (`src/ts/_common.ts`)** :
+  - Mise à niveau de `escapeHtml()` pour encoder les guillemets simples et doubles (`&quot;`, `&#039;`) en entités HTML, éliminant tout risque d'évasion d'attributs HTML lors de l'injection dynamique dans le DOM (`data-slug`, `value`, etc.).
+- **Verrouillage du mode maintenance (`MaintenanceMode::enable`)** :
+  - Restriction stricte du contournement du mode maintenance aux seules requêtes POST AJAX WordPress fournissant un jeton cryptographique valide (`restore_token`).
+- **Prévention de fuite de fichiers via liens symboliques (`AjaxHandler::collectFilesToArchive`)** :
+  - Suppression de l'option `FOLLOW_SYMLINKS` dans l'explorateur récursif pour interdire la capture de fichiers système externes dans les archives ZIP.
+- **Neutralisation des risques d'argument injection sur CLI `zip` (`Archiver`)** :
+  - Préfixage des chemins relatifs passés à la commande binaire `zip` par `./files/` pour éviter l'interprétation de dossiers commençant par un tiret comme des commutateurs de commande.
+- **Validation renforcée du téléversement d'archives (`AjaxHandler::eg_restore_inspect` & `eg_restore_start`)** :
+  - Vérification insensible à la casse de l'extension `.zip` et contrôle de l'intégrité de l'archive par signature binaire (magic bytes `PK\x03\x04` / `PK\x05\x06`).
+  - Assainissement strict du slug dans `eg_restore_install_plugin` via `sanitize_key()`.
+- **Requêtes préparées conformes WPCS (`DatabaseImporter::searchAndReplace`)** :
+  - Utilisation de `$wpdb->prepare()` avec placeholders `%d` pour les clauses `LIMIT` et `OFFSET`.
+
+### Corrigé
+- **Correction d'avertissement PHP dans la vue des sauvegardes (`list-page.php`)** :
+  - Définition préalable sécurisée de la variable `$pluginsCount` pour prévenir les notices `Undefined variable`.
+
 ## [1.0.10] - 2026-11-04
 
 ### Corrigé

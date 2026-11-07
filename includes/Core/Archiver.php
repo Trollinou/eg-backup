@@ -290,11 +290,31 @@ class Archiver {
             }
 
             $relTarget = ltrim(wp_normalize_path($relTarget), '/');
+
+            // Protection anti-Zip Slip (Path Traversal) : interdire les traversées de dossiers et octets nuls.
+            if (strpos($relTarget, '..') !== false || strpos($relTarget, "\0") !== false) {
+                continue;
+            }
+
             $fullTarget = $contentDir . '/' . $relTarget;
+            $normalizedTarget = wp_normalize_path($fullTarget);
+            $normalizedBase = trailingslashit(wp_normalize_path($contentDir));
+
+            if (strpos($normalizedTarget, $normalizedBase) !== 0) {
+                continue;
+            }
+
             $targetDir = dirname($fullTarget);
 
             if (!is_dir($targetDir)) {
                 wp_mkdir_p($targetDir);
+            }
+
+            // Vérifier que le dossier cible réel ne sort pas de WP_CONTENT_DIR.
+            $realTargetDir = realpath($targetDir);
+            $realContentDir = realpath($contentDir);
+            if ($realTargetDir === false || $realContentDir === false || strpos(trailingslashit(wp_normalize_path($realTargetDir)), trailingslashit(wp_normalize_path($realContentDir))) !== 0) {
+                continue;
             }
 
             $stream = $zip->getStream($entryName);
@@ -342,19 +362,57 @@ class Archiver {
      * @return bool
      */
     public static function extractZip($zipPath, $extractTo) {
-        if (!class_exists('ZipArchive')) {
+        if (!class_exists('ZipArchive') || !file_exists($zipPath)) {
             return false;
         }
 
         $zip = new \ZipArchive();
-        if ($zip->open($zipPath) === true) {
-            wp_mkdir_p($extractTo);
-            $result = $zip->extractTo($extractTo);
-            $zip->close();
-            return $result;
+        if ($zip->open($zipPath) !== true) {
+            return false;
         }
 
-        return false;
+        wp_mkdir_p($extractTo);
+        $normalizedExtractTo = trailingslashit(wp_normalize_path($extractTo));
+        $numFiles = $zip->numFiles;
+
+        for ($i = 0; $i < $numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            if ($name === false) {
+                continue;
+            }
+
+            $cleanName = ltrim(wp_normalize_path($name), '/');
+            // Protection anti-Zip Slip (Path Traversal).
+            if (strpos($cleanName, '..') !== false || strpos($cleanName, "\0") !== false) {
+                continue;
+            }
+
+            $targetPath = wp_normalize_path($extractTo . '/' . $cleanName);
+            if (strpos($targetPath, $normalizedExtractTo) !== 0) {
+                continue;
+            }
+
+            if (substr($name, -1) === '/') {
+                wp_mkdir_p($targetPath);
+            } else {
+                $dir = dirname($targetPath);
+                if (!is_dir($dir)) {
+                    wp_mkdir_p($dir);
+                }
+                $stream = $zip->getStream($name);
+                if ($stream) {
+                    $outFp = @fopen($targetPath, 'wb');
+                    if ($outFp) {
+                        stream_copy_to_stream($stream, $outFp);
+                        fclose($outFp);
+                    }
+                    fclose($stream);
+                }
+            }
+        }
+
+        $zip->close();
+        return true;
     }
 
     /**
@@ -443,12 +501,15 @@ class Archiver {
             @exec($cmdBase, $outBase, $retBase);
         }
 
-        // 2. Dossiers sélectionnés
+        // 2. Dossiers sélectionnés.
         $targetPaths = [];
         foreach ($selectedFolders as $relFolder) {
             $relFolder = ltrim(wp_normalize_path($relFolder), '/');
+            if (strpos($relFolder, '..') !== false || strpos($relFolder, '-') === 0) {
+                continue;
+            }
             if (file_exists($contentDir . '/' . $relFolder)) {
-                $targetPaths[] = escapeshellarg('files/' . $relFolder);
+                $targetPaths[] = escapeshellarg('./files/' . $relFolder);
             }
         }
 
@@ -670,8 +731,11 @@ class Archiver {
         $targetPaths = [];
         foreach ($selectedFolders as $relFolder) {
             $relFolder = ltrim(wp_normalize_path($relFolder), '/');
+            if (strpos($relFolder, '..') !== false || strpos($relFolder, '-') === 0) {
+                continue;
+            }
             if (file_exists($contentDir . '/' . $relFolder)) {
-                $targetPaths[] = escapeshellarg('files/' . $relFolder);
+                $targetPaths[] = escapeshellarg('./files/' . $relFolder);
             }
         }
 

@@ -170,5 +170,30 @@ class ArchiverTest extends TestCase {
         $this->assertTrue($result);
         $this->assertSame('ABCDEFGHIJ', $output);
     }
+
+    /**
+     * Vérifie que extractZip bloque le Zip Slip (Path Traversal).
+     */
+    public function testExtractZipBlocksPathTraversal(): void {
+        if (!class_exists('ZipArchive')) {
+            $this->markTestSkipped('Module ZipArchive requis.');
+        }
+
+        $zipPath = $this->testDir . '/traversal_test.zip';
+        $zip = new \ZipArchive();
+        $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+        $zip->addFromString('valid.txt', 'valid content');
+        $zip->addFromString('../evil.txt', 'malicious content');
+        $zip->addFromString('subdir/../../escape.txt', 'malicious content');
+        $zip->close();
+
+        $targetExtract = $this->testDir . '/extracted';
+        $result = Archiver::extractZip($zipPath, $targetExtract);
+
+        $this->assertTrue($result);
+        $this->assertFileExists($targetExtract . '/valid.txt');
+        $this->assertFileDoesNotExist($this->testDir . '/evil.txt');
+        $this->assertFileDoesNotExist($this->testDir . '/escape.txt');
+    }
 }
 

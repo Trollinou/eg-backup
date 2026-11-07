@@ -77,14 +77,16 @@ export function $$<T extends HTMLElement = HTMLElement>(selector: string, parent
 }
 
 /**
- * Échappe une chaîne pour un affichage sécurisé dans le DOM.
+ * Échappe une chaîne pour un affichage sécurisé dans le DOM et les attributs HTML.
  */
 export function escapeHtml(str: any): string {
     if (str === null || str === undefined) return '';
-    const text = String(str);
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 }
 
 /**

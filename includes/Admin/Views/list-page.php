@@ -63,6 +63,7 @@ foreach ($backups as $b) {
                         $manifest = $backup['manifest'];
                         $backupType = $manifest['backup_type'] ?? (strpos($backup['filename'], 'core') !== false ? 'core' : (strpos($backup['filename'], 'media') !== false ? 'media' : 'full'));
                         $thumbsExcluded = !empty($manifest['media_options']['thumbs_excluded']);
+                        $pluginsCount = is_array($manifest['plugins'] ?? null) ? count($manifest['plugins']) : 0;
                     ?>
                         <tr id="row-<?php echo esc_attr(sanitize_title($backup['filename'])); ?>">
                             <td>
